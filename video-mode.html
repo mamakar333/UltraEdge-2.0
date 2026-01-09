@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultra Edge DRS - Video Analysis Mode</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="video-mode-body">
+    <div class="main-container">
+        <!-- Top Header -->
+        <header class="main-header">
+            <div class="header-left">
+                <button class="btn btn-back" onclick="window.location.href='index.html'">
+                    ← BACK TO MODE SELECTION
+                </button>
+            </div>
+            <div class="header-center">
+                <h1 class="app-title">ULTRA EDGE DRS</h1>
+                <span class="mode-badge">VIDEO ANALYSIS MODE</span>
+            </div>
+            <div class="header-right">
+                <div class="timestamp-display" id="currentTime">00:00:00.000</div>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="content-grid">
+            <!-- Left Panel: Video Player & Controls -->
+            <div class="left-panel">
+                <!-- Video Upload Section -->
+                <div class="video-upload-section" id="videoUploadSection">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📁</div>
+                        <h3>Upload Cricket Video</h3>
+                        <p>Drag & drop video file here or click to browse</p>
+                        <p class="upload-formats">Supported: MP4, WebM, MOV, AVI</p>
+                        <input type="file" id="videoFileInput" accept="video/*" style="display: none;">
+                        <button class="btn btn-primary" onclick="document.getElementById('videoFileInput').click()">
+                            SELECT VIDEO FILE
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Main Video Player -->
+                <div class="video-player-container" id="videoPlayerContainer" style="display: none;">
+                    <div class="video-wrapper">
+                        <video id="mainVideo" class="main-video" controls></video>
+
+                        <!-- Overlay Canvases -->
+                        <canvas id="ballTrackingOverlay" class="overlay-canvas"></canvas>
+                        <canvas id="hotspotOverlay" class="overlay-canvas"></canvas>
+
+                        <!-- Frame Counter -->
+                        <div class="frame-counter">
+                            Frame: <span id="frameNumber">0</span> / <span id="totalFrames">0</span>
+                        </div>
+
+                        <!-- Decision Overlay -->
+                        <div class="decision-overlay" id="decisionOverlay" style="display: none;">
+                            <div class="decision-panel">
+                                <div class="decision-title">DECISION REVIEW</div>
+                                <div class="decision-result" id="decisionResult">ANALYZING...</div>
+                                <div class="decision-confidence">
+                                    Confidence: <span id="decisionConfidence">0</span>%
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Video Controls -->
+                    <div class="video-controls">
+                        <div class="playback-controls">
+                            <button class="btn-control" id="playPauseBtn" title="Play/Pause">
+                                <span id="playPauseIcon">▶</span>
+                            </button>
+                            <button class="btn-control" id="rewindBtn" title="Rewind 5s">⏪</button>
+                            <button class="btn-control" id="frameBackBtn" title="Previous Frame">⏮</button>
+                            <button class="btn-control" id="frameForwardBtn" title="Next Frame">⏭</button>
+                            <button class="btn-control" id="forwardBtn" title="Forward 5s">⏩</button>
+
+                            <div class="time-display">
+                                <span id="videoCurrentTime">00:00</span> / <span id="videoDuration">00:00</span>
+                            </div>
+
+                            <div class="playback-speed">
+                                <label>Speed:</label>
+                                <select id="playbackSpeed">
+                                    <option value="0.25">0.25x</option>
+                                    <option value="0.5">0.5x</option>
+                                    <option value="1" selected>1x</option>
+                                    <option value="1.5">1.5x</option>
+                                    <option value="2">2x</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Timeline with Spike Markers -->
+                        <div class="timeline-container">
+                            <canvas id="timelineCanvas" class="timeline-canvas"></canvas>
+                            <input type="range" id="videoSeeker" class="video-seeker" min="0" max="100" value="0" step="0.01">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Panel: Waveform & Analysis -->
+            <div class="center-panel">
+                <!-- Waveform Display -->
+                <div class="waveform-section">
+                    <div class="section-header">
+                        <h3>ULTRA EDGE WAVEFORM</h3>
+                        <div class="sync-indicator">
+                            <span class="sync-dot" id="syncIndicator"></span>
+                            <span id="syncStatus">Not Synced</span>
+                        </div>
+                    </div>
+                    <div class="waveform-display">
+                        <canvas id="waveformCanvas"></canvas>
+                        <div class="playhead" id="playhead"></div>
+                    </div>
+                    <div class="waveform-controls">
+                        <label>
+                            <input type="checkbox" id="autoDetectSpikes" checked> Auto-detect spikes
+                        </label>
+                        <button class="btn btn-small" id="markSpikeBtn">Mark Spike Manually</button>
+                        <button class="btn btn-small" id="clearMarkersBtn">Clear All Markers</button>
+                    </div>
+                </div>
+
+                <!-- Hot-Spot Display -->
+                <div class="hotspot-section">
+                    <div class="section-header">
+                        <h3>HOT-SPOT THERMAL IMAGING</h3>
+                        <label>
+                            <input type="checkbox" id="hotspotEnabled"> Enable Hot-Spot
+                        </label>
+                    </div>
+                    <div class="hotspot-display">
+                        <canvas id="hotspotCanvas"></canvas>
+                        <div class="hotspot-legend">
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #0000ff;"></span> Cold
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #00ff00;"></span> Warm
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ffff00;"></span> Hot
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ff0000;"></span> Very Hot
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Controls & Analysis -->
+            <div class="right-panel">
+                <!-- AI Enhancement Settings -->
+                <div class="panel-section" style="border: 2px solid #00ff41;">
+                    <h3>🤖 AI ENHANCEMENT</h3>
+                    <div class="control-group">
+                        <label>
+                            <input type="checkbox" id="aiEnabled" onchange="window.videoModeApp?.toggleAI(this.checked)">
+                            Enable AI Detection
+                        </label>
+                    </div>
+                    <div class="status-group" style="font-size: 11px; margin-top: 10px;">
+                        <div style="color: #888;">Audio Classifier: <span id="aiAudioStatus">Loading...</span></div>
+                        <div style="color: #888;">Ball Tracker: <span id="aiBallStatus">Loading...</span></div>
+                        <div style="color: #888;">Training Samples: <span id="aiTrainingCount">0</span></div>
+                    </div>
+                    <div class="control-group" style="margin-top: 10px;">
+                        <button class="btn btn-small" onclick="window.videoModeApp?.aiTrainingPipeline.downloadTrainingData()" style="width: 100%; font-size: 10px;">
+                            Export Training Data
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Detection Settings -->
+                <div class="panel-section">
+                    <h3>DETECTION SETTINGS</h3>
+                    <div class="control-group">
+                        <label>Sensitivity: <span id="sensitivityValue">50</span>%</label>
+                        <input type="range" id="sensitivitySlider" min="1" max="100" value="50" class="slider">
+                    </div>
+                    <div class="control-group">
+                        <label>Threshold: <span id="thresholdValue">0.3</span></label>
+                        <input type="range" id="thresholdSlider" min="0.1" max="0.9" step="0.05" value="0.3" class="slider">
+                    </div>
+                    <div class="control-group">
+                        <label>
+                            <input type="checkbox" id="frequencyFilter"> Frequency Filtering
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Ball Tracking -->
+                <div class="panel-section">
+                    <h3>BALL TRACKING</h3>
+                    <div class="control-group">
+                        <label>
+                            <input type="checkbox" id="ballTrackingEnabled"> Enable Ball Tracking
+                        </label>
+                    </div>
+                    <div id="ballTrackingData" class="data-display">
+                        <div class="data-row">
+                            <span class="data-label">Ball Speed:</span>
+                            <span class="data-value" id="ballSpeed">-</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Impact Angle:</span>
+                            <span class="data-value" id="impactAngle">-</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Impact Point:</span>
+                            <span class="data-value" id="impactPoint">-</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Trajectory:</span>
+                            <span class="data-value" id="trajectory">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Decision System -->
+                <div class="panel-section">
+                    <h3>DECISION SYSTEM</h3>
+                    <button class="btn btn-primary btn-block" id="analyzeDecisionBtn">
+                        ANALYZE DECISION
+                    </button>
+                    <div id="decisionAnalysis" class="decision-analysis">
+                        <div class="analysis-item">
+                            <span class="analysis-label">Ultra Edge:</span>
+                            <span class="analysis-status" id="ultraEdgeStatus">-</span>
+                        </div>
+                        <div class="analysis-item">
+                            <span class="analysis-label">Hot-Spot:</span>
+                            <span class="analysis-status" id="hotspotStatus">-</span>
+                        </div>
+                        <div class="analysis-item">
+                            <span class="analysis-label">Ball Tracking:</span>
+                            <span class="analysis-status" id="trackingStatus">-</span>
+                        </div>
+                        <div class="final-decision" id="finalDecision">
+                            NO DECISION
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Spike List -->
+                <div class="panel-section">
+                    <h3>DETECTED SPIKES</h3>
+                    <div class="spike-list" id="spikeList">
+                        <p class="no-data">No spikes detected</p>
+                    </div>
+                </div>
+
+                <!-- Replay Controls -->
+                <div class="panel-section">
+                    <h3>INSTANT REPLAY</h3>
+                    <div class="control-group">
+                        <label>Replay Duration: <span id="replayDuration">5</span>s</label>
+                        <input type="range" id="replayDurationSlider" min="2" max="15" value="5" class="slider">
+                    </div>
+                    <button class="btn btn-primary btn-block" id="instantReplayBtn">
+                        ⏯ INSTANT REPLAY
+                    </button>
+                    <button class="btn btn-secondary btn-block" id="loopReplayBtn">
+                        🔁 LOOP REPLAY
+                    </button>
+                    <button class="btn btn-secondary btn-block" id="saveClipBtn">
+                        💾 SAVE REPLAY CLIP
+                    </button>
+                </div>
+
+                <!-- Export Options -->
+                <div class="panel-section">
+                    <h3>EXPORT</h3>
+                    <button class="btn btn-secondary btn-block" id="exportJSONBtn">
+                        Export Analysis (JSON)
+                    </button>
+                    <button class="btn btn-secondary btn-block" id="exportCSVBtn">
+                        Export Spikes (CSV)
+                    </button>
+                    <button class="btn btn-secondary btn-block" id="exportReportBtn">
+                        Generate PDF Report
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-label">Status:</span>
+                <span class="status-value" id="systemStatus">Ready</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Spikes:</span>
+                <span class="status-value" id="spikeCount">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">FPS:</span>
+                <span class="status-value" id="fpsDisplay">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Audio Sample Rate:</span>
+                <span class="status-value" id="sampleRate">-</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/audio-processor.js"></script>
+    <script src="js/spike-detector.js"></script>
+    <script src="js/waveform-visualizer.js"></script>
+    <script src="js/video-sync.js"></script>
+    <script src="js/replay-controller.js"></script>
+    <script src="js/ball-tracker.js"></script>
+    <script src="js/decision-system.js"></script>
+    <script src="js/hotspot-overlay.js"></script>
+    <script src="js/video-analyzer.js"></script>
+
+    <!-- TensorFlow.js for AI models -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+
+    <!-- AI Enhancement Modules -->
+    <script src="js/ai-audio-classifier.js"></script>
+    <script src="js/ai-ball-tracker.js"></script>
+    <script src="js/ai-training-pipeline.js"></script>
+
+    <script src="js/video-mode-main.js"></script>
+</body>
+</html>

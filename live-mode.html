@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultra Edge DRS - Live Stream Mode</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="live-mode-body">
+    <div class="main-container">
+        <!-- Top Header -->
+        <header class="main-header">
+            <div class="header-left">
+                <button class="btn btn-back" onclick="window.location.href='index.html'">
+                    ← BACK TO MODE SELECTION
+                </button>
+            </div>
+            <div class="header-center">
+                <h1 class="app-title">ULTRA EDGE DRS</h1>
+                <span class="mode-badge live-badge">LIVE STREAM MODE</span>
+            </div>
+            <div class="header-right">
+                <div class="live-indicator" id="liveIndicator">
+                    <span class="live-dot"></span> LIVE
+                </div>
+                <div class="timestamp-display" id="currentTime">00:00:00.000</div>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="content-grid-live">
+            <!-- Top Section: Live Video Feeds -->
+            <div class="video-feeds-section">
+                <!-- Main Camera Feed -->
+                <div class="camera-feed main-feed">
+                    <div class="feed-header">
+                        <span class="feed-label">MAIN CAMERA</span>
+                        <button class="btn btn-small" id="selectMainCameraBtn">Select Source</button>
+                    </div>
+                    <div class="video-container">
+                        <video id="mainCameraFeed" class="camera-video" autoplay muted></video>
+                        <canvas id="mainCameraOverlay" class="overlay-canvas"></canvas>
+
+                        <!-- Live Overlays -->
+                        <div class="live-overlay-info">
+                            <div class="overlay-item" id="ballSpeedDisplay">
+                                BALL SPEED: <span>0 km/h</span>
+                            </div>
+                            <div class="overlay-item" id="impactZoneDisplay">
+                                IMPACT ZONE: <span>-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Secondary Cameras -->
+                <div class="secondary-feeds">
+                    <div class="camera-feed">
+                        <div class="feed-header">
+                            <span class="feed-label">ANGLE 1</span>
+                            <button class="btn btn-small" id="selectCamera1Btn">Select</button>
+                        </div>
+                        <div class="video-container">
+                            <video id="camera1Feed" class="camera-video" autoplay muted></video>
+                        </div>
+                    </div>
+
+                    <div class="camera-feed">
+                        <div class="feed-header">
+                            <span class="feed-label">ANGLE 2</span>
+                            <button class="btn btn-small" id="selectCamera2Btn">Select</button>
+                        </div>
+                        <div class="video-container">
+                            <video id="camera2Feed" class="camera-video" autoplay muted></video>
+                        </div>
+                    </div>
+
+                    <div class="camera-feed">
+                        <div class="feed-header">
+                            <span class="feed-label">ULTRA EDGE CAM</span>
+                            <button class="btn btn-small" id="selectCamera3Btn">Select</button>
+                        </div>
+                        <div class="video-container">
+                            <video id="camera3Feed" class="camera-video" autoplay muted></video>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Middle Section: Waveform & Analysis Tools -->
+            <div class="analysis-section">
+                <!-- Ultra Edge Waveform -->
+                <div class="waveform-panel">
+                    <div class="panel-header">
+                        <h3>ULTRA EDGE WAVEFORM</h3>
+                        <div class="waveform-status">
+                            <span class="status-dot" id="waveformStatus"></span>
+                            <span id="waveformStatusText">Monitoring</span>
+                        </div>
+                    </div>
+                    <div class="waveform-display-live">
+                        <canvas id="liveWaveformCanvas"></canvas>
+                        <!-- Spike marker line -->
+                        <div class="spike-line" id="spikeLine" style="display: none;"></div>
+                    </div>
+                    <div class="waveform-info">
+                        <div class="info-item">
+                            <span class="info-label">Audio Level:</span>
+                            <div class="level-meter-mini">
+                                <div class="level-fill" id="audioLevelFill"></div>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Last Spike:</span>
+                            <span class="info-value" id="lastSpikeTime">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hot-Spot & Ball Tracking -->
+                <div class="analysis-tools">
+                    <div class="tool-panel hotspot-panel">
+                        <div class="panel-header">
+                            <h4>HOT-SPOT</h4>
+                            <label class="switch">
+                                <input type="checkbox" id="hotspotToggle">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <canvas id="liveHotspotCanvas" class="analysis-canvas"></canvas>
+                        <div class="hotspot-status" id="hotspotStatusText">No contact detected</div>
+                    </div>
+
+                    <div class="tool-panel tracking-panel">
+                        <div class="panel-header">
+                            <h4>BALL TRACKING</h4>
+                            <label class="switch">
+                                <input type="checkbox" id="ballTrackingToggle">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="tracking-viz">
+                            <canvas id="ballTrackingViz" class="analysis-canvas"></canvas>
+                        </div>
+                        <div class="tracking-data">
+                            <div class="data-item">Speed: <span id="liveSpeed">-</span></div>
+                            <div class="data-item">Angle: <span id="liveAngle">-</span></div>
+                            <div class="data-item">Bounce: <span id="liveBounce">-</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Section: Controls & Decision -->
+            <div class="control-section">
+                <!-- Live Controls -->
+                <div class="live-controls-panel">
+                    <div class="control-group-inline">
+                        <button class="btn btn-large btn-primary" id="startMonitoringBtn">
+                            <span class="btn-icon">●</span> START MONITORING
+                        </button>
+                        <button class="btn btn-large btn-danger" id="stopMonitoringBtn" disabled>
+                            <span class="btn-icon">■</span> STOP
+                        </button>
+                    </div>
+
+                    <div class="control-group-inline">
+                        <button class="btn btn-large btn-secondary" id="instantReplayLiveBtn" disabled>
+                            ⏯ INSTANT REPLAY
+                        </button>
+                        <button class="btn btn-large btn-secondary" id="reviewDecisionBtn" disabled>
+                            🔍 REVIEW DECISION
+                        </button>
+                        <button class="btn btn-large btn-secondary" id="captureFrameBtn" disabled>
+                            📷 CAPTURE FRAME
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Settings Panel -->
+                <div class="settings-panel">
+                    <h4>DETECTION SETTINGS</h4>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label>Sensitivity: <span id="liveSensitivity">50</span>%</label>
+                            <input type="range" id="liveSensitivitySlider" min="1" max="100" value="50" class="slider-small">
+                        </div>
+                        <div class="setting-item">
+                            <label>Threshold: <span id="liveThreshold">0.3</span></label>
+                            <input type="range" id="liveThresholdSlider" min="0.1" max="0.9" step="0.05" value="0.3" class="slider-small">
+                        </div>
+                        <div class="setting-item">
+                            <label>Replay Buffer: <span id="bufferSize">10</span>s</label>
+                            <input type="range" id="bufferSizeSlider" min="5" max="30" value="10" class="slider-small">
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="autoReplayToggle"> Auto Replay on Spike
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="transparentBgLive"> Transparent (OBS)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Sidebar: Live Data & History -->
+            <div class="right-sidebar">
+                <!-- Decision Display -->
+                <div class="decision-panel-live">
+                    <h3>LIVE DECISION</h3>
+                    <div class="decision-display" id="liveDecisionDisplay">
+                        <div class="decision-status">AWAITING REVIEW</div>
+                    </div>
+                    <div class="decision-breakdown">
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">Ultra Edge:</span>
+                            <span class="breakdown-value" id="liveUltraEdge">-</span>
+                        </div>
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">Hot-Spot:</span>
+                            <span class="breakdown-value" id="liveHotspot">-</span>
+                        </div>
+                        <div class="breakdown-item">
+                            <span class="breakdown-label">Ball Track:</span>
+                            <span class="breakdown-value" id="liveBallTrack">-</span>
+                        </div>
+                    </div>
+                    <div class="decision-confidence-bar">
+                        <div class="confidence-fill" id="confidenceFill"></div>
+                        <span class="confidence-text" id="confidenceText">0%</span>
+                    </div>
+                </div>
+
+                <!-- Live Event Log -->
+                <div class="event-log-panel">
+                    <h3>EVENT LOG</h3>
+                    <div class="event-log" id="eventLog">
+                        <p class="no-events">No events yet...</p>
+                    </div>
+                    <button class="btn btn-small btn-block" id="clearLogBtn">Clear Log</button>
+                </div>
+
+                <!-- Spike History -->
+                <div class="spike-history-panel">
+                    <h3>SPIKE HISTORY</h3>
+                    <div class="spike-history-list" id="spikeHistoryList">
+                        <p class="no-spikes">No spikes detected</p>
+                    </div>
+                </div>
+
+                <!-- Multi-Camera Sync Status -->
+                <div class="sync-status-panel">
+                    <h3>CAMERA SYNC</h3>
+                    <div class="sync-indicators">
+                        <div class="sync-item">
+                            <span class="sync-label">Main:</span>
+                            <span class="sync-status synced" id="mainCameraSync">⬤</span>
+                        </div>
+                        <div class="sync-item">
+                            <span class="sync-label">Angle 1:</span>
+                            <span class="sync-status" id="camera1Sync">⬤</span>
+                        </div>
+                        <div class="sync-item">
+                            <span class="sync-label">Angle 2:</span>
+                            <span class="sync-status" id="camera2Sync">⬤</span>
+                        </div>
+                        <div class="sync-item">
+                            <span class="sync-label">UE Cam:</span>
+                            <span class="sync-status" id="camera3Sync">⬤</span>
+                        </div>
+                    </div>
+                    <div class="sync-offset">
+                        Max Offset: <span id="maxOffset">0ms</span>
+                    </div>
+                </div>
+
+                <!-- Export Options -->
+                <div class="export-panel">
+                    <h3>EXPORT</h3>
+                    <button class="btn btn-secondary btn-block" id="exportSessionBtn">
+                        Export Session
+                    </button>
+                    <button class="btn btn-secondary btn-block" id="saveHighlightsBtn">
+                        Save Highlights
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Replay Overlay (appears when replay is triggered) -->
+        <div class="replay-overlay" id="replayOverlay" style="display: none;">
+            <div class="replay-container">
+                <div class="replay-header">
+                    <h2>INSTANT REPLAY</h2>
+                    <button class="btn-close" id="closeReplayBtn">✕</button>
+                </div>
+                <div class="replay-video-container">
+                    <video id="replayVideo" class="replay-video" controls></video>
+                </div>
+                <div class="replay-controls">
+                    <button class="btn btn-primary" id="playSlowMotionBtn">
+                        Play Slow Motion (0.25x)
+                    </button>
+                    <button class="btn btn-secondary" id="loopReplayLiveBtn">
+                        Loop Replay
+                    </button>
+                    <button class="btn btn-secondary" id="saveReplayBtn">
+                        Save Replay
+                    </button>
+                </div>
+                <div class="replay-timeline">
+                    <canvas id="replayWaveformCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-label">System:</span>
+                <span class="status-value status-active" id="systemStatusLive">Ready</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Cameras:</span>
+                <span class="status-value" id="activeCameras">0/4</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Spikes:</span>
+                <span class="status-value" id="liveSpikesCount">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Buffer:</span>
+                <span class="status-value" id="bufferStatus">0s</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">FPS:</span>
+                <span class="status-value" id="liveFps">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Audio:</span>
+                <span class="status-value" id="audioStatus">48kHz</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/audio-processor.js"></script>
+    <script src="js/spike-detector.js"></script>
+    <script src="js/waveform-visualizer.js"></script>
+    <script src="js/replay-controller.js"></script>
+    <script src="js/ball-tracker.js"></script>
+    <script src="js/decision-system.js"></script>
+    <script src="js/hotspot-overlay.js"></script>
+    <script src="js/live-stream-handler.js"></script>
+    <script src="js/multi-camera-sync.js"></script>
+    <script src="js/live-mode-main.js"></script>
+</body>
+</html>

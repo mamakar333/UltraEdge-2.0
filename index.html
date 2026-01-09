@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultra Edge DRS - Professional Cricket Analysis System</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Mode Selection Screen -->
+    <div id="modeSelection" class="mode-selection">
+        <div class="mode-selection-container">
+            <header class="mode-header">
+                <h1 class="mode-title">ULTRA EDGE DRS</h1>
+                <p class="mode-subtitle">Professional Cricket Decision Review System</p>
+            </header>
+
+            <div class="mode-cards">
+                <div class="mode-card" onclick="selectMode('video')">
+                    <div class="mode-icon">📹</div>
+                    <h2>VIDEO ANALYSIS MODE</h2>
+                    <p>Upload and analyze video files with frame-by-frame precision</p>
+                    <ul class="mode-features">
+                        <li>Video file upload & sync</li>
+                        <li>Frame-by-frame analysis</li>
+                        <li>Instant replay controls</li>
+                        <li>Ball tracking integration</li>
+                        <li>Hot-spot overlay</li>
+                        <li>Multi-angle comparison</li>
+                        <li>Export analysis reports</li>
+                    </ul>
+                    <button class="btn btn-primary btn-large">
+                        LAUNCH VIDEO MODE
+                    </button>
+                </div>
+
+                <div class="mode-card" onclick="selectMode('live')">
+                    <div class="mode-icon">🔴</div>
+                    <h2>LIVE STREAM MODE</h2>
+                    <p>Real-time monitoring with instant replay capabilities</p>
+                    <ul class="mode-features">
+                        <li>Real-time audio monitoring</li>
+                        <li>Live waveform visualization</li>
+                        <li>Instant replay buffer</li>
+                        <li>Auto spike detection</li>
+                        <li>OBS Studio integration</li>
+                        <li>Multi-camera sync</li>
+                        <li>Live decision system</li>
+                    </ul>
+                    <button class="btn btn-primary btn-large">
+                        LAUNCH LIVE MODE
+                    </button>
+                </div>
+            </div>
+
+            <div class="mode-footer">
+                <p>Select your preferred mode to begin cricket analysis</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        function selectMode(mode) {
+            if (mode === 'video') {
+                window.location.href = 'video-mode.html';
+            } else if (mode === 'live') {
+                window.location.href = 'live-mode.html';
+            }
+        }
+    </script>
+</body>
+</html>
