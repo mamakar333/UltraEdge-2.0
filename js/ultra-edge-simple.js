@@ -22,8 +22,7 @@ class UltraEdgeSimple {
         this.uploadOverlay = document.getElementById('uploadOverlay');
         this.videoControls = document.getElementById('videoControls');
         this.playPauseBtn = document.getElementById('playPauseBtn');
-        this.timeline = document.getElementById('timeline');
-        this.timelineProgress = document.getElementById('timelineProgress');
+        this.timelineSlider = document.getElementById('timelineSlider');
         this.loadingOverlay = document.getElementById('loadingOverlay');
 
         // Status displays
@@ -32,6 +31,10 @@ class UltraEdgeSimple {
         this.spikeIndicator = document.getElementById('spikeIndicator');
         this.currentTimeDisplay = document.getElementById('currentTime');
         this.durationDisplay = document.getElementById('duration');
+
+        // Scrubbing state
+        this.isScrubbing = false;
+        this.currentSpeed = 1.0;
 
         // Audio Analysis (Web Audio API)
         this.audioContext = null;
@@ -85,8 +88,22 @@ class UltraEdgeSimple {
         // Play/Pause
         this.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
 
-        // Timeline interaction
-        this.timeline.addEventListener('click', (e) => this.seekTo(e));
+        // Timeline slider - scrubbing with audio
+        this.timelineSlider.addEventListener('mousedown', () => this.startScrubbing());
+        this.timelineSlider.addEventListener('touchstart', () => this.startScrubbing());
+        this.timelineSlider.addEventListener('mouseup', () => this.endScrubbing());
+        this.timelineSlider.addEventListener('touchend', () => this.endScrubbing());
+        document.addEventListener('mouseup', () => this.endScrubbing());
+
+        this.timelineSlider.addEventListener('input', (e) => {
+            const time = (e.target.value / 100) * this.video.duration;
+            this.video.currentTime = time;
+        });
+
+        // Speed controls
+        document.querySelectorAll('.speed-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => this.setSpeed(e.target));
+        });
 
         // Video events
         this.video.addEventListener('loadedmetadata', () => this.onVideoLoaded());
@@ -94,6 +111,7 @@ class UltraEdgeSimple {
         this.video.addEventListener('pause', () => this.onPause());
         this.video.addEventListener('timeupdate', () => this.onTimeUpdate());
         this.video.addEventListener('ended', () => this.onEnded());
+        this.video.addEventListener('ratechange', () => this.onRateChange());
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -102,6 +120,33 @@ class UltraEdgeSimple {
                 this.togglePlayPause();
             }
         });
+    }
+
+    startScrubbing() {
+        this.isScrubbing = true;
+        console.log('🎯 Started scrubbing');
+        // Keep audio context active for scrubbing audio
+    }
+
+    endScrubbing() {
+        this.isScrubbing = false;
+        console.log('🎯 Ended scrubbing');
+    }
+
+    setSpeed(button) {
+        const speed = parseFloat(button.dataset.speed);
+        this.currentSpeed = speed;
+        this.video.playbackRate = speed;
+
+        // Update active button
+        document.querySelectorAll('.speed-btn').forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+
+        console.log(`⏱ Speed set to ${speed}x`);
+    }
+
+    onRateChange() {
+        console.log(`📊 Playback rate: ${this.video.playbackRate}x`);
     }
 
     async loadVideo(file) {
@@ -196,20 +241,16 @@ class UltraEdgeSimple {
     }
 
     onTimeUpdate() {
-        // Update timeline progress
-        const progress = (this.video.currentTime / this.video.duration) * 100;
-        this.timelineProgress.style.width = `${progress}%`;
+        // Update timeline slider (only if not scrubbing to avoid jitter)
+        if (!this.isScrubbing) {
+            const progress = (this.video.currentTime / this.video.duration) * 100;
+            this.timelineSlider.value = progress;
+        }
 
         // Update time display
         this.currentTimeDisplay.textContent = this.formatTime(this.video.currentTime);
     }
 
-    seekTo(event) {
-        const rect = this.timeline.getBoundingClientRect();
-        const clickX = event.clientX - rect.left;
-        const percentage = clickX / rect.width;
-        this.video.currentTime = percentage * this.video.duration;
-    }
 
     startAnalysis() {
         if (this.isAnalyzing) return;
