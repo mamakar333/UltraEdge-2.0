@@ -96,8 +96,10 @@ class UltraEdgeSimple {
         document.addEventListener('mouseup', () => this.endScrubbing());
 
         this.timelineSlider.addEventListener('input', (e) => {
-            const time = (e.target.value / 100) * this.video.duration;
-            this.video.currentTime = time;
+            if (this.video.duration && !isNaN(this.video.duration)) {
+                const time = (e.target.value / 100) * this.video.duration;
+                this.video.currentTime = time;
+            }
         });
 
         // Speed controls
@@ -205,6 +207,9 @@ class UltraEdgeSimple {
             this.uploadOverlay.style.display = 'none';
             this.videoControls.style.display = 'block';
 
+            // Start analysis immediately
+            this.startAnalysis();
+
         } catch (error) {
             console.error('❌ Audio analysis initialization failed:', error);
             alert('Failed to initialize audio analysis. Please try again.');
@@ -227,12 +232,16 @@ class UltraEdgeSimple {
 
     onPlay() {
         this.playPauseBtn.textContent = '⏸';
+        if (this.audioContext) {
+            this.audioContext.resume(); // Resume audio context
+        }
         this.startAnalysis();
     }
 
     onPause() {
         this.playPauseBtn.textContent = '▶';
-        this.stopAnalysis();
+        // Don't stop analysis on pause - keep waveform active
+        // this.stopAnalysis();
     }
 
     onEnded() {
@@ -242,7 +251,7 @@ class UltraEdgeSimple {
 
     onTimeUpdate() {
         // Update timeline slider (only if not scrubbing to avoid jitter)
-        if (!this.isScrubbing) {
+        if (!this.isScrubbing && this.video.duration && !isNaN(this.video.duration)) {
             const progress = (this.video.currentTime / this.video.duration) * 100;
             this.timelineSlider.value = progress;
         }
