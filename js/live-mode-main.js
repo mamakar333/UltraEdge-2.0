@@ -397,6 +397,35 @@ class LiveModeApp {
     // Monitoring
     // =========================================================================
 
+    /**
+     * Wait for VDO.ninja stream to become available with timeout
+     * @param {number} timeoutMs - Timeout in milliseconds
+     * @returns {Promise<MediaStream|null>} The MediaStream or null if timeout
+     */
+    async waitForVdoNinjaStream(timeoutMs = 10000) {
+        const startTime = Date.now();
+        const checkInterval = 200; // Check every 200ms
+
+        while (Date.now() - startTime < timeoutMs) {
+            const stream = this.vdoNinjaConnector.getMediaStream();
+
+            if (stream) {
+                // Stream found!
+                const hasAudio = stream.getAudioTracks().length > 0;
+                const hasVideo = stream.getVideoTracks().length > 0;
+                console.log(`VDO.ninja stream found after ${Date.now() - startTime}ms - Audio: ${hasAudio}, Video: ${hasVideo}`);
+                return stream;
+            }
+
+            // Wait before checking again
+            await new Promise(resolve => setTimeout(resolve, checkInterval));
+        }
+
+        // Timeout - stream not available
+        console.warn(`VDO.ninja stream not available after ${timeoutMs}ms timeout`);
+        return null;
+    }
+
     async startMonitoring() {
         try {
             this.updateStatus('Initializing...', 'active');
@@ -411,20 +440,46 @@ class LiveModeApp {
             let audioInitialized = false;
 
             if (this.currentSource === 'vdo-ninja') {
-                // For VDO.ninja: ONLY use the MediaStream from VDO.ninja iframe
-                const vdoStream = this.vdoNinjaConnector.getMediaStream();
+                // For VDO.ninja: Try to get the MediaStream, with retry logic
+                this.updateStatus('Waiting for VDO.ninja stream...', 'active');
+                this.logEvent('Waiting for VDO.ninja MediaStream...', 'system');
+
+                // Wait for stream to become available (with timeout)
+                const vdoStream = await this.waitForVdoNinjaStream(10000); // 10 second timeout
 
                 if (vdoStream && vdoStream.getAudioTracks().length > 0) {
                     audioInitialized = await this.audioProcessor.initializeFromStream(vdoStream);
                     // Also start DVR recording from VDO.ninja stream
                     this.replayController.startRecordingFromStream(vdoStream);
-                    this.logEvent('Using VDO.ninja audio for spike detection', 'system');
+                    this.logEvent('✓ Using VDO.ninja audio for spike detection', 'system');
+                } else if (vdoStream && vdoStream.getVideoTracks().length > 0) {
+                    // Video is available but no audio - warn user but continue with local mic
+                    console.warn('VDO.ninja has video but no audio tracks');
+                    this.logEvent('⚠️ VDO.ninja video available, but no audio - using local microphone', 'system');
+
+                    // Use local microphone for audio analysis
+                    audioInitialized = await this.audioProcessor.initialize();
+
+                    // Record video from VDO.ninja stream
+                    this.replayController.startRecordingFromStream(vdoStream);
                 } else {
-                    // Stream not available - show error, don't fall back
-                    alert('VDO.ninja stream not ready.\n\nPlease ensure:\n1. VDO.ninja is connected (check for LIVE indicator)\n2. The remote device is streaming\n3. Try disconnecting and reconnecting');
-                    this.updateStatus('VDO.ninja stream not available', 'error');
-                    this.logEvent('VDO.ninja stream not available - cannot start monitoring', 'error');
-                    return;
+                    // Stream truly not available after timeout
+                    const useMic = confirm(
+                        '⚠️ VDO.ninja Audio Not Available\n\n' +
+                        'The VDO.ninja video is displaying, but the audio stream cannot be accessed due to browser security restrictions.\n\n' +
+                        'Click OK to continue with LOCAL MICROPHONE for audio analysis.\n' +
+                        'Click Cancel to stop and try a different source.\n\n' +
+                        '💡 Tip: Use "Local Camera" mode for full audio/video analysis.'
+                    );
+
+                    if (useMic) {
+                        // Fall back to local microphone
+                        audioInitialized = await this.audioProcessor.initialize();
+                        this.logEvent('⚠️ VDO.ninja stream unavailable - using local microphone fallback', 'system');
+                    } else {
+                        this.updateStatus('Monitoring cancelled', 'error');
+                        return;
+                    }
                 }
             } else if (this.currentSource === 'local') {
                 // For local camera: use microphone audio

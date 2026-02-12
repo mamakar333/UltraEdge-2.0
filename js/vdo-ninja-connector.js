@@ -162,9 +162,31 @@ class VdoNinjaConnector {
 
     /**
      * Get the MediaStream received from VDO.ninja
+     * If IFrame API didn't provide stream, try capturing from iframe's video element
      */
     getMediaStream() {
-        return this.mediaStream;
+        // Return cached stream if available
+        if (this.mediaStream) {
+            return this.mediaStream;
+        }
+
+        // Fallback: Try to capture stream from iframe's video element
+        // Note: This only works if iframe is same-origin or has proper CORS headers
+        try {
+            if (this.iframe && this.iframe.contentDocument) {
+                const video = this.iframe.contentDocument.querySelector('video');
+                if (video && video.srcObject) {
+                    console.log('Fallback: Captured MediaStream from iframe video element');
+                    this.mediaStream = video.srcObject;
+                    return this.mediaStream;
+                }
+            }
+        } catch (e) {
+            // Cross-origin error - expected for VDO.ninja
+            console.log('Cannot access iframe video element (cross-origin)', e.message);
+        }
+
+        return null;
     }
 
     /**
