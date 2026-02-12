@@ -92,8 +92,132 @@ class LiveModeApp {
 
         this.setupEventListeners();
         this.initializeVisualizers();
+        this.setupCleanupHandlers();
+
+        // Diagnostic: Check for any existing audio/video elements or iframes
+        this.checkForExistingMediaElements();
 
         console.log('Live Mode initialized');
+    }
+
+    /**
+     * Diagnostic function to check for pre-existing media elements
+     * Helps identify if audio is coming from somewhere unexpected
+     */
+    checkForExistingMediaElements() {
+        const audioElements = document.querySelectorAll('audio');
+        const videoElements = document.querySelectorAll('video');
+        const iframes = document.querySelectorAll('iframe');
+
+        console.log('=== MEDIA ELEMENTS DIAGNOSTIC ===');
+        console.log('Audio elements found:', audioElements.length);
+        console.log('Video elements found:', videoElements.length);
+        console.log('Iframes found:', iframes.length);
+
+        if (audioElements.length > 0) {
+            audioElements.forEach((audio, idx) => {
+                console.log(`Audio ${idx}:`, {
+                    src: audio.src,
+                    paused: audio.paused,
+                    muted: audio.muted,
+                    volume: audio.volume
+                });
+            });
+        }
+
+        if (videoElements.length > 0) {
+            videoElements.forEach((video, idx) => {
+                console.log(`Video ${idx}:`, {
+                    id: video.id,
+                    src: video.src,
+                    srcObject: video.srcObject ? 'MediaStream attached' : 'None',
+                    paused: video.paused,
+                    muted: video.muted
+                });
+            });
+        }
+
+        if (iframes.length > 0) {
+            iframes.forEach((iframe, idx) => {
+                console.log(`Iframe ${idx}:`, {
+                    id: iframe.id,
+                    src: iframe.src || 'None',
+                    display: iframe.style.display
+                });
+            });
+        }
+
+        console.log('=== END DIAGNOSTIC ===');
+
+        // Warning if unexpected elements found
+        if (iframes.length > 0 && !iframes[0].id) {
+            console.warn('⚠️ Found unexpected iframe! This might be causing audio playback.');
+        }
+    }
+
+    /**
+     * Setup cleanup handlers for page unload/close
+     * Ensures all connections and streams are properly closed
+     */
+    setupCleanupHandlers() {
+        // Cleanup on page unload (browser close, refresh, navigate away)
+        window.addEventListener('beforeunload', () => {
+            console.log('Page unloading - cleaning up all connections');
+            this.cleanup();
+        });
+
+        // Cleanup on visibility change (tab switch)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                console.log('Page hidden - pausing monitoring if active');
+            }
+        });
+    }
+
+    /**
+     * Complete cleanup - stop all streams and disconnect everything
+     */
+    cleanup() {
+        console.log('Cleaning up LiveModeApp...');
+
+        // Stop monitoring if active
+        if (this.isMonitoring) {
+            this.stopMonitoring();
+        }
+
+        // Disconnect VDO.ninja
+        if (this.vdoNinjaConnector && this.currentSource === 'vdo-ninja') {
+            console.log('Disconnecting VDO.ninja iframe');
+            this.vdoNinjaConnector.disconnect();
+        }
+
+        // Stop local camera
+        if (this.liveStreamHandler && this.currentSource === 'local') {
+            console.log('Stopping local camera');
+            this.liveStreamHandler.stopCamera();
+        }
+
+        // Stop tab capture stream
+        if (this.tabCaptureStream) {
+            console.log('Stopping tab capture stream');
+            this.tabCaptureStream.getTracks().forEach(track => {
+                track.stop();
+                console.log('Stopped track:', track.kind);
+            });
+            this.tabCaptureStream = null;
+        }
+
+        // Dispose audio processor
+        if (this.audioProcessor) {
+            this.audioProcessor.dispose();
+        }
+
+        // Dispose replay controller
+        if (this.replayController) {
+            this.replayController.dispose();
+        }
+
+        console.log('Cleanup complete');
     }
 
     setupEventListeners() {
@@ -674,14 +798,32 @@ class LiveModeApp {
      */
     enterDvrMode() {
         if (this.isDvrMode) return;
+
+        // Check if we have DVR data
+        const bufferDuration = this.replayController.getDvrBufferDuration();
+        console.log('Entering DVR mode, buffer duration:', bufferDuration, 'seconds');
+
+        if (bufferDuration < 1) {
+            console.warn('DVR buffer too short (< 1 second), staying in live mode');
+            alert('Not enough DVR data yet. Please wait a few seconds and try again.');
+            // Reset slider to live position
+            if (this.elements.dvrTimeline) {
+                this.elements.dvrTimeline.value = this.elements.dvrTimeline.max;
+            }
+            return;
+        }
+
         this.isDvrMode = true;
 
         // Create blob from DVR buffer
         const blob = this.replayController.getDvrBlob();
         if (!blob) {
-            console.warn('No DVR data available');
+            console.error('Failed to create DVR blob');
+            this.isDvrMode = false;
             return;
         }
+
+        console.log('DVR blob created, size:', (blob.size / 1024 / 1024).toFixed(2), 'MB');
 
         // Revoke previous URL
         if (this.dvrBlobUrl) {
@@ -691,10 +833,23 @@ class LiveModeApp {
 
         const dvrVideo = this.elements.dvrPlaybackVideo;
         if (dvrVideo) {
+            console.log('Setting DVR video source to blob URL');
             dvrVideo.src = this.dvrBlobUrl;
             dvrVideo.style.setProperty('display', 'block', 'important'); // Override CSS !important
             dvrVideo.muted = false;
-            dvrVideo.play();
+
+            // Wait for video to be ready before playing
+            dvrVideo.addEventListener('loadedmetadata', () => {
+                console.log('DVR video loaded, duration:', dvrVideo.duration, 'seconds');
+                dvrVideo.play().catch(err => console.error('DVR play failed:', err));
+            }, { once: true });
+
+            // Add error handler
+            dvrVideo.addEventListener('error', (e) => {
+                console.error('DVR video error:', e, dvrVideo.error);
+                alert('Failed to load DVR playback. Please try again.');
+                this.jumpToLive();
+            }, { once: true });
         }
 
         // Hide live feed (iframe or local video)

@@ -143,11 +143,28 @@ class VdoNinjaConnector {
      * Disconnect and remove the iframe
      */
     disconnect() {
+        console.log('Disconnecting VDO.ninja...');
+
+        // Stop any media streams
+        if (this.mediaStream) {
+            this.mediaStream.getTracks().forEach(track => {
+                track.stop();
+                console.log('Stopped VDO.ninja track:', track.kind);
+            });
+            this.mediaStream = null;
+        }
+
+        // Remove iframe from DOM
         if (this.iframe) {
+            console.log('Removing VDO.ninja iframe from DOM');
+            // First, clear the src to stop any loading/playback
+            this.iframe.src = 'about:blank';
+            // Then remove from DOM
             this.iframe.remove();
             this.iframe = null;
         }
 
+        // Remove message listener
         window.removeEventListener('message', this._handleMessage);
 
         this.isConnected = false;
@@ -158,7 +175,7 @@ class VdoNinjaConnector {
             this.onConnectionChange(false, {});
         }
 
-        console.log('VDO.ninja disconnected');
+        console.log('VDO.ninja disconnected and cleaned up');
     }
 
     /**
