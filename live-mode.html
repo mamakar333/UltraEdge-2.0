@@ -29,10 +29,12 @@
 
         <!-- Main Content Grid -->
         <div class="content-grid-live">
-            <!-- Top Section: Live Video Feeds -->
-            <div class="video-feeds-section">
-                <!-- Main Camera Feed -->
-                <div class="camera-feed main-feed">
+            <!-- Top Row: Video Player + Waveform Side by Side -->
+            <div class="top-row-flex">
+                <!-- Left: Video Player -->
+                <div class="video-player-column">
+                    <!-- Main Camera Feed -->
+                    <div class="camera-feed main-feed">
                     <div class="feed-header">
                         <span class="feed-label">MAIN CAMERA</span>
                         <div class="feed-header-right">
@@ -112,10 +114,11 @@
                     </div>
                 </div>
                 -->
-            </div>
+                </div>
+                <!-- End Video Player Column -->
 
-            <!-- Middle Section: Waveform & Analysis Tools -->
-            <div class="analysis-section">
+                <!-- Right: Ultra Edge Waveform Column -->
+                <div class="waveform-column">
                 <!-- Ultra Edge Waveform -->
                 <div class="waveform-panel">
                     <div class="panel-header">
@@ -144,6 +147,22 @@
                     </div>
                 </div>
 
+                <!-- Monitoring Controls (Start/Stop) -->
+                <div class="monitoring-controls">
+                    <button class="btn btn-large btn-primary btn-block" id="startMonitoringBtn">
+                        <span class="btn-icon">●</span> START MONITORING
+                    </button>
+                    <button class="btn btn-large btn-danger btn-block" id="stopMonitoringBtn" disabled>
+                        <span class="btn-icon">■</span> STOP
+                    </button>
+                </div>
+                </div>
+                <!-- End Waveform Column -->
+            </div>
+            <!-- End Top Row Flex -->
+
+            <!-- Bottom Section: Analysis Tools & Controls -->
+            <div class="bottom-section">
                 <!-- Hot-Spot & Ball Tracking -->
                 <div class="analysis-tools">
                     <div class="tool-panel hotspot-panel">
@@ -178,19 +197,10 @@
                 </div>
             </div>
 
-            <!-- Bottom Section: Controls & Decision -->
+            <!-- Action Controls Section -->
             <div class="control-section">
-                <!-- Live Controls -->
+                <!-- Action Controls -->
                 <div class="live-controls-panel">
-                    <div class="control-group-inline">
-                        <button class="btn btn-large btn-primary" id="startMonitoringBtn">
-                            <span class="btn-icon">●</span> START MONITORING
-                        </button>
-                        <button class="btn btn-large btn-danger" id="stopMonitoringBtn" disabled>
-                            <span class="btn-icon">■</span> STOP
-                        </button>
-                    </div>
-
                     <div class="control-group-inline">
                         <button class="btn btn-large btn-secondary" id="instantReplayLiveBtn" disabled>
                             ⏯ INSTANT REPLAY

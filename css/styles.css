@@ -1578,6 +1578,46 @@ body.transparent {
 }
 
 /* ===================================================================
+   TOP ROW FLEX LAYOUT (Video + Waveform Side by Side)
+   =================================================================== */
+.top-row-flex {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.video-player-column {
+    flex: 1.2;
+    min-width: 0;
+}
+
+.waveform-column {
+    flex: 1;
+    min-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.waveform-column .waveform-panel {
+    flex: 1;
+}
+
+.monitoring-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.monitoring-controls .btn-block {
+    width: 100%;
+}
+
+.bottom-section {
+    margin-top: 20px;
+}
+
+/* ===================================================================
    DVR CONTROLS
    =================================================================== */
 .dvr-controls {
