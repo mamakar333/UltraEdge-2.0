@@ -28,6 +28,9 @@ class LiveModeApp {
         this.dvrBlobUrl = null;
         this.dvrUpdateInterval = null;
 
+        // Tab audio capture stream (for VDO.ninja audio)
+        this.tabCaptureStream = null;
+
         this.init();
     }
 
@@ -398,6 +401,41 @@ class LiveModeApp {
     // =========================================================================
 
     /**
+     * Capture tab audio (for VDO.ninja stream audio)
+     * This captures the audio that's currently playing in the browser tab
+     * @returns {Promise<MediaStream|null>} The captured stream or null if failed
+     */
+    async captureTabAudio() {
+        try {
+            console.log('Requesting tab audio capture...');
+
+            const stream = await navigator.mediaDevices.getDisplayMedia({
+                video: true,  // Required by Chrome, we'll use for DVR too
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false
+                },
+                preferCurrentTab: true  // Pre-select current tab
+            });
+
+            console.log('Tab capture successful!');
+            console.log('Audio tracks:', stream.getAudioTracks().length);
+            console.log('Video tracks:', stream.getVideoTracks().length);
+
+            this.tabCaptureStream = stream;
+            return stream;
+
+        } catch (error) {
+            console.error('Tab capture failed:', error);
+            if (error.name === 'NotAllowedError') {
+                alert('Tab capture permission denied.\n\nTo capture VDO.ninja audio, please:\n1. Click "Current Tab"\n2. Check "Share audio"\n3. Click "Share"');
+            }
+            return null;
+        }
+    }
+
+    /**
      * Wait for VDO.ninja stream to become available with timeout
      * @param {number} timeoutMs - Timeout in milliseconds
      * @returns {Promise<MediaStream|null>} The MediaStream or null if timeout
@@ -440,46 +478,23 @@ class LiveModeApp {
             let audioInitialized = false;
 
             if (this.currentSource === 'vdo-ninja') {
-                // For VDO.ninja: Try to get the MediaStream, with retry logic
-                this.updateStatus('Waiting for VDO.ninja stream...', 'active');
-                this.logEvent('Waiting for VDO.ninja MediaStream...', 'system');
+                // For VDO.ninja: Capture the tab audio (the audio you're hearing)
+                this.updateStatus('Requesting tab audio capture...', 'active');
+                this.logEvent('Capturing tab audio (VDO.ninja stream audio)...', 'system');
 
-                // Wait for stream to become available (with timeout)
-                const vdoStream = await this.waitForVdoNinjaStream(10000); // 10 second timeout
+                const tabStream = await this.captureTabAudio();
 
-                if (vdoStream && vdoStream.getAudioTracks().length > 0) {
-                    audioInitialized = await this.audioProcessor.initializeFromStream(vdoStream);
-                    // Also start DVR recording from VDO.ninja stream
-                    this.replayController.startRecordingFromStream(vdoStream);
-                    this.logEvent('✓ Using VDO.ninja audio for spike detection', 'system');
-                } else if (vdoStream && vdoStream.getVideoTracks().length > 0) {
-                    // Video is available but no audio - warn user but continue with local mic
-                    console.warn('VDO.ninja has video but no audio tracks');
-                    this.logEvent('⚠️ VDO.ninja video available, but no audio - using local microphone', 'system');
-
-                    // Use local microphone for audio analysis
-                    audioInitialized = await this.audioProcessor.initialize();
-
-                    // Record video from VDO.ninja stream
-                    this.replayController.startRecordingFromStream(vdoStream);
+                if (tabStream && tabStream.getAudioTracks().length > 0) {
+                    // Success! Use the captured tab audio for spike detection
+                    audioInitialized = await this.audioProcessor.initializeFromStream(tabStream);
+                    // Also use it for DVR recording
+                    this.replayController.startRecordingFromStream(tabStream);
+                    this.logEvent('✓ Using Saramonic mic audio (via tab capture)', 'system');
                 } else {
-                    // Stream truly not available after timeout
-                    const useMic = confirm(
-                        '⚠️ VDO.ninja Audio Not Available\n\n' +
-                        'The VDO.ninja video is displaying, but the audio stream cannot be accessed due to browser security restrictions.\n\n' +
-                        'Click OK to continue with LOCAL MICROPHONE for audio analysis.\n' +
-                        'Click Cancel to stop and try a different source.\n\n' +
-                        '💡 Tip: Use "Local Camera" mode for full audio/video analysis.'
-                    );
-
-                    if (useMic) {
-                        // Fall back to local microphone
-                        audioInitialized = await this.audioProcessor.initialize();
-                        this.logEvent('⚠️ VDO.ninja stream unavailable - using local microphone fallback', 'system');
-                    } else {
-                        this.updateStatus('Monitoring cancelled', 'error');
-                        return;
-                    }
+                    // Tab capture failed
+                    alert('Failed to capture tab audio.\n\nYou need to:\n1. Allow tab sharing\n2. Make sure "Share audio" is checked\n\nPlease try again.');
+                    this.updateStatus('Tab capture failed', 'error');
+                    return;
                 }
             } else if (this.currentSource === 'local') {
                 // For local camera: use microphone audio
@@ -565,6 +580,13 @@ class LiveModeApp {
     stopMonitoring() {
         this.audioProcessor.stop();
         this.waveformVisualizer.stop();
+
+        // Stop tab capture stream if active (VDO.ninja audio)
+        if (this.tabCaptureStream) {
+            this.tabCaptureStream.getTracks().forEach(track => track.stop());
+            this.tabCaptureStream = null;
+            console.log('Tab capture stream stopped');
+        }
 
         // Only stop local camera if that's the source — VDO.ninja stays connected
         if (this.currentSource === 'local') {
