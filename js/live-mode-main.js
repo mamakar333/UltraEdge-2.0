@@ -487,9 +487,11 @@ class LiveModeApp {
                 if (tabStream && tabStream.getAudioTracks().length > 0) {
                     // Success! Use the captured tab audio for spike detection
                     audioInitialized = await this.audioProcessor.initializeFromStream(tabStream);
-                    // Also use it for DVR recording
+                    // Also use it for DVR recording (video + audio recorded, but not displayed)
                     this.replayController.startRecordingFromStream(tabStream);
                     this.logEvent('✓ Using Saramonic mic audio (via tab capture)', 'system');
+                    console.log('Tab capture: Recording video+audio for DVR, using audio for spike detection');
+                    console.log('Display: VDO.ninja iframe remains visible (tab capture NOT displayed)');
                 } else {
                     // Tab capture failed
                     alert('Failed to capture tab audio.\n\nYou need to:\n1. Allow tab sharing\n2. Make sure "Share audio" is checked\n\nPlease try again.');
@@ -542,6 +544,12 @@ class LiveModeApp {
             // Show DVR controls
             if (this.elements.dvrControls) {
                 this.elements.dvrControls.style.display = 'block';
+            }
+
+            // Ensure DVR playback video is hidden (only VDO.ninja iframe or camera should be visible)
+            if (this.elements.dvrPlaybackVideo) {
+                this.elements.dvrPlaybackVideo.style.setProperty('display', 'none', 'important');
+                console.log('DVR playback video hidden - showing live feed only');
             }
 
             // Update UI
@@ -677,7 +685,7 @@ class LiveModeApp {
         const dvrVideo = this.elements.dvrPlaybackVideo;
         if (dvrVideo) {
             dvrVideo.src = this.dvrBlobUrl;
-            dvrVideo.style.display = 'block';
+            dvrVideo.style.setProperty('display', 'block', 'important'); // Override CSS !important
             dvrVideo.muted = false;
             dvrVideo.play();
         }
@@ -685,7 +693,10 @@ class LiveModeApp {
         // Hide live feed (iframe or local video)
         if (this.currentSource === 'vdo-ninja') {
             const iframe = this.vdoNinjaConnector.getIframe();
-            if (iframe) iframe.style.display = 'none';
+            if (iframe) {
+                iframe.style.display = 'none';
+                console.log('DVR mode: Hiding VDO.ninja iframe, showing DVR playback');
+            }
         } else {
             this.elements.mainCameraFeed.style.display = 'none';
         }
@@ -714,7 +725,7 @@ class LiveModeApp {
         if (dvrVideo) {
             dvrVideo.pause();
             dvrVideo.src = '';
-            dvrVideo.style.display = 'none';
+            dvrVideo.style.setProperty('display', 'none', 'important'); // Force hidden
         }
 
         if (this.dvrBlobUrl) {
@@ -725,7 +736,10 @@ class LiveModeApp {
         // Show live feed again
         if (this.currentSource === 'vdo-ninja') {
             const iframe = this.vdoNinjaConnector.getIframe();
-            if (iframe) iframe.style.display = 'block';
+            if (iframe) {
+                iframe.style.display = 'block';
+                console.log('LIVE mode: Showing VDO.ninja iframe, DVR playback hidden');
+            }
         } else {
             this.elements.mainCameraFeed.style.display = 'block';
         }

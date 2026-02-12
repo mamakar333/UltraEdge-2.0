@@ -905,6 +905,28 @@ body.transparent {
     display: block;
 }
 
+/* DVR playback video - hidden by default, only shown in DVR mode */
+#dvrPlaybackVideo {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10; /* Above main camera feed when shown */
+    display: none !important; /* Force hidden until explicitly shown in DVR mode */
+}
+
+/* VDO.ninja iframe - should be on top when in live mode */
+.vdo-ninja-iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    z-index: 5; /* Above main camera feed */
+}
+
 .live-overlay-info {
     position: absolute;
     bottom: 10px;
