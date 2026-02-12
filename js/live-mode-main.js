@@ -313,8 +313,15 @@ class LiveModeApp {
             // Hide the <video> element, show iframe instead
             this.elements.mainCameraFeed.style.display = 'none';
 
+            // Ensure DVR playback video is hidden
+            if (this.elements.dvrPlaybackVideo) {
+                this.elements.dvrPlaybackVideo.style.setProperty('display', 'none', 'important');
+            }
+
             // Get the video-container div
             const videoContainer = this.elements.mainCameraFeed.parentElement;
+
+            console.log('Connecting VDO.ninja to container:', videoContainer);
 
             // Setup callbacks
             this.vdoNinjaConnector.onConnectionChange = (connected, info) => {

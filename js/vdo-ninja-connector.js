@@ -59,10 +59,18 @@ class VdoNinjaConnector {
             // Insert iframe into container
             container.appendChild(this.iframe);
 
+            // Ensure iframe is visible
+            this.iframe.style.display = 'block';
+            this.iframe.style.width = '100%';
+            this.iframe.style.minHeight = '400px';
+
+            console.log('VDO.ninja iframe created and appended to container');
+
             // Listen for iframe load
             this.iframe.addEventListener('load', () => {
                 this.isConnected = true;
-                console.log('VDO.ninja iframe loaded:', cleanUrl);
+                console.log('VDO.ninja iframe loaded successfully:', cleanUrl);
+                console.log('Iframe dimensions:', this.iframe.offsetWidth, 'x', this.iframe.offsetHeight);
 
                 if (this.onConnectionChange) {
                     this.onConnectionChange(true, { url: cleanUrl, apiId: this.apiId });
