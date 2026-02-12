@@ -12,6 +12,7 @@ class AudioProcessor {
         this.microphone = null;
         this.scriptProcessor = null;
         this.mediaStream = null;
+        this.bandPassFilter = null; // For bat-ball impact frequency filtering
 
         // Audio analysis buffers
         this.bufferLength = 0;
@@ -21,6 +22,11 @@ class AudioProcessor {
         // Configuration
         this.fftSize = 2048; // Higher FFT size for better frequency resolution
         this.smoothingTimeConstant = 0.3; // Reduced smoothing for faster spike response
+
+        // Bat-ball impact detection configuration
+        this.batBallFilterEnabled = true; // Enable frequency filtering for bat-ball sounds
+        this.batBallCenterFreq = 4000; // Center frequency for bat-ball impacts (4 kHz)
+        this.batBallBandwidth = 3000; // Bandwidth (covers ~2.5-5.5 kHz range)
 
         // State
         this.isRunning = false;
@@ -59,13 +65,28 @@ class AudioProcessor {
             // Create audio source from microphone
             this.microphone = this.audioContext.createMediaStreamSource(this.mediaStream);
 
+            // Create band-pass filter for bat-ball impact frequency isolation
+            // Bat-ball impacts typically occur in 2-8 kHz range (sharp, percussive sounds)
+            if (this.batBallFilterEnabled) {
+                this.bandPassFilter = this.audioContext.createBiquadFilter();
+                this.bandPassFilter.type = 'bandpass';
+                this.bandPassFilter.frequency.value = this.batBallCenterFreq;
+                this.bandPassFilter.Q.value = this.batBallCenterFreq / this.batBallBandwidth; // Q factor determines bandwidth
+                console.log(`Bat-ball filter enabled: ${this.batBallCenterFreq}Hz ±${this.batBallBandwidth/2}Hz (filters out crowd noise and low-frequency sounds)`);
+            }
+
             // Create analyser node for FFT analysis
             this.analyser = this.audioContext.createAnalyser();
             this.analyser.fftSize = this.fftSize;
             this.analyser.smoothingTimeConstant = this.smoothingTimeConstant;
 
-            // Connect microphone to analyser
-            this.microphone.connect(this.analyser);
+            // Connect audio processing chain: microphone -> filter -> analyser
+            if (this.batBallFilterEnabled && this.bandPassFilter) {
+                this.microphone.connect(this.bandPassFilter);
+                this.bandPassFilter.connect(this.analyser);
+            } else {
+                this.microphone.connect(this.analyser);
+            }
 
             // Initialize data buffers
             this.bufferLength = this.analyser.frequencyBinCount;
@@ -109,13 +130,28 @@ class AudioProcessor {
             // Create audio source from the provided stream
             this.microphone = this.audioContext.createMediaStreamSource(stream);
 
+            // Create band-pass filter for bat-ball impact frequency isolation
+            // Filters out crowd noise, talking, and low-frequency sounds
+            if (this.batBallFilterEnabled) {
+                this.bandPassFilter = this.audioContext.createBiquadFilter();
+                this.bandPassFilter.type = 'bandpass';
+                this.bandPassFilter.frequency.value = this.batBallCenterFreq;
+                this.bandPassFilter.Q.value = this.batBallCenterFreq / this.batBallBandwidth;
+                console.log(`Bat-ball filter enabled: ${this.batBallCenterFreq}Hz ±${this.batBallBandwidth/2}Hz (filters out crowd noise)`);
+            }
+
             // Create analyser node for FFT analysis
             this.analyser = this.audioContext.createAnalyser();
             this.analyser.fftSize = this.fftSize;
             this.analyser.smoothingTimeConstant = this.smoothingTimeConstant;
 
-            // Connect source to analyser
-            this.microphone.connect(this.analyser);
+            // Connect audio processing chain: stream -> filter -> analyser
+            if (this.batBallFilterEnabled && this.bandPassFilter) {
+                this.microphone.connect(this.bandPassFilter);
+                this.bandPassFilter.connect(this.analyser);
+            } else {
+                this.microphone.connect(this.analyser);
+            }
 
             // Initialize data buffers
             this.bufferLength = this.analyser.frequencyBinCount;
@@ -371,6 +407,59 @@ class AudioProcessor {
     }
 
     /**
+     * Enable or disable bat-ball impact frequency filter
+     * When enabled, filters audio to focus on 2-8 kHz range (bat-ball impacts)
+     * When disabled, analyzes full frequency spectrum
+     * @param {boolean} enabled - Whether to enable the filter
+     */
+    setBatBallFilterEnabled(enabled) {
+        this.batBallFilterEnabled = enabled;
+
+        if (this.bandPassFilter) {
+            if (enabled) {
+                console.log('Bat-ball filter enabled - focusing on impact frequencies (2-8 kHz)');
+            } else {
+                console.log('Bat-ball filter disabled - analyzing full audio spectrum');
+            }
+        }
+
+        // If already initialized, need to restart to apply changes
+        if (this.audioContext && this.microphone) {
+            console.warn('Filter change requires restarting monitoring to take effect');
+        }
+    }
+
+    /**
+     * Adjust bat-ball filter parameters
+     * @param {number} centerFreq - Center frequency in Hz (default: 4000)
+     * @param {number} bandwidth - Bandwidth in Hz (default: 3000)
+     */
+    setBatBallFilterParams(centerFreq, bandwidth) {
+        this.batBallCenterFreq = centerFreq;
+        this.batBallBandwidth = bandwidth;
+
+        if (this.bandPassFilter) {
+            this.bandPassFilter.frequency.value = centerFreq;
+            this.bandPassFilter.Q.value = centerFreq / bandwidth;
+            console.log(`Bat-ball filter updated: ${centerFreq}Hz ±${bandwidth/2}Hz`);
+        }
+    }
+
+    /**
+     * Get current filter status
+     * @returns {Object} Filter configuration
+     */
+    getFilterConfig() {
+        return {
+            enabled: this.batBallFilterEnabled,
+            centerFreq: this.batBallCenterFreq,
+            bandwidth: this.batBallBandwidth,
+            rangeLow: this.batBallCenterFreq - (this.batBallBandwidth / 2),
+            rangeHigh: this.batBallCenterFreq + (this.batBallBandwidth / 2)
+        };
+    }
+
+    /**
      * Cleanup and release resources
      */
     dispose() {
@@ -378,6 +467,10 @@ class AudioProcessor {
 
         if (this.microphone) {
             this.microphone.disconnect();
+        }
+
+        if (this.bandPassFilter) {
+            this.bandPassFilter.disconnect();
         }
 
         if (this.analyser) {

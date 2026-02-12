@@ -7,7 +7,7 @@
 class SpikeDetector {
     constructor() {
         // Detection parameters
-        this.threshold = 0.3; // Base amplitude threshold (0-1)
+        this.threshold = 0.2; // Base amplitude threshold (0-1) - lowered for filtered signals
         this.sensitivity = 50; // Sensitivity percentage (1-100)
 
         // Detection state
@@ -17,7 +17,7 @@ class SpikeDetector {
 
         // Temporal filtering (prevents multiple detections of same spike)
         this.lastSpikeTime = 0;
-        this.minTimeBetweenSpikes = 0.1; // 100ms minimum gap between spikes
+        this.minTimeBetweenSpikes = 0.05; // 50ms minimum gap - bat-ball impacts can be very quick
 
         // Signal analysis buffers
         this.previousRMS = 0;
@@ -25,9 +25,14 @@ class SpikeDetector {
         this.rmsHistorySize = 10;
 
         // Advanced detection parameters
-        this.rateOfChangeThreshold = 2.0; // How quickly signal must rise
-        this.frequencyRangeLow = 500;  // Hz - Low frequency cutoff
-        this.frequencyRangeHigh = 8000; // Hz - High frequency cutoff
+        // Note: With band-pass filtering, these parameters work on pre-filtered audio
+        this.rateOfChangeThreshold = 1.5; // Reduced threshold for sharper transient detection
+        this.frequencyRangeLow = 2000;  // Hz - Bat-ball impacts start around 2 kHz
+        this.frequencyRangeHigh = 8000; // Hz - Bat-ball impacts up to 8 kHz
+
+        // Bat-ball specific detection
+        this.transientDetectionEnabled = true; // Focus on sharp, percussive sounds
+        this.minTransientRiseTime = 0.01; // 10ms - bat-ball impacts have very fast attack
 
         // Callbacks
         this.onSpikeDetected = null;
