@@ -26,6 +26,11 @@ class AudioProcessor {
         this.isRunning = false;
         this.currentLevel = 0;
 
+        // Rolling audio buffer (60 seconds of waveform snapshots)
+        this.rollingBuffer = [];
+        this.rollingBufferMaxDuration = 60; // seconds
+        this.lastSnapshotTime = 0;
+
         // Callbacks
         this.onAudioData = null; // Callback for waveform data
         this.onLevelUpdate = null; // Callback for audio level updates
@@ -90,6 +95,45 @@ class AudioProcessor {
     }
 
     /**
+     * Initialize from an existing MediaStream (e.g., tab capture via getDisplayMedia)
+     * instead of requesting microphone access
+     * @param {MediaStream} stream - External MediaStream with audio tracks
+     * @returns {Promise<boolean>} Success status
+     */
+    async initializeFromStream(stream) {
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            this.audioContext = new AudioCtx();
+            this.mediaStream = stream;
+
+            // Create audio source from the provided stream
+            this.microphone = this.audioContext.createMediaStreamSource(stream);
+
+            // Create analyser node for FFT analysis
+            this.analyser = this.audioContext.createAnalyser();
+            this.analyser.fftSize = this.fftSize;
+            this.analyser.smoothingTimeConstant = this.smoothingTimeConstant;
+
+            // Connect source to analyser
+            this.microphone.connect(this.analyser);
+
+            // Initialize data buffers
+            this.bufferLength = this.analyser.frequencyBinCount;
+            this.dataArray = new Uint8Array(this.bufferLength);
+            this.frequencyData = new Uint8Array(this.bufferLength);
+
+            console.log('Audio processor initialized from external stream');
+            console.log('Sample Rate:', this.audioContext.sampleRate);
+            console.log('Audio tracks:', stream.getAudioTracks().length);
+
+            return true;
+        } catch (error) {
+            console.error('Failed to initialize audio from stream:', error);
+            return false;
+        }
+    }
+
+    /**
      * Start audio processing loop
      */
     start() {
@@ -132,6 +176,13 @@ class AudioProcessor {
 
         // Calculate current audio level (RMS)
         this.currentLevel = this.calculateRMS(this.dataArray);
+
+        // Store snapshot in rolling buffer
+        const now = this.audioContext.currentTime;
+        if (now - this.lastSnapshotTime >= 1 / 60) {
+            this.addToRollingBuffer(now);
+            this.lastSnapshotTime = now;
+        }
 
         // Trigger callbacks with audio data
         if (this.onAudioData) {
@@ -224,6 +275,85 @@ class AudioProcessor {
     }
 
     /**
+     * Add current waveform data to the rolling buffer
+     */
+    addToRollingBuffer(timestamp) {
+        const snapshot = {
+            timestamp: timestamp,
+            wallTime: Date.now(),
+            rms: this.currentLevel,
+            peak: this.calculatePeak(this.dataArray),
+            waveformSample: this.downsampleWaveform(this.dataArray, 8)
+        };
+
+        this.rollingBuffer.push(snapshot);
+
+        // Trim buffer to maxDuration
+        const oldestAllowed = timestamp - this.rollingBufferMaxDuration;
+        while (this.rollingBuffer.length > 0 && this.rollingBuffer[0].timestamp < oldestAllowed) {
+            this.rollingBuffer.shift();
+        }
+    }
+
+    /**
+     * Downsample waveform data to reduce memory usage
+     */
+    downsampleWaveform(data, factor) {
+        const length = Math.ceil(data.length / factor);
+        const result = new Uint8Array(length);
+        for (let i = 0; i < length; i++) {
+            result[i] = data[i * factor];
+        }
+        return result;
+    }
+
+    /**
+     * Extract audio data from the rolling buffer around a specific timestamp
+     * @param {number} timestamp - Center timestamp (AudioContext time in seconds)
+     * @param {number} windowHalf - Half-window size in seconds (e.g., 0.1 for +/- 100ms)
+     */
+    getAudioWindowAroundTimestamp(timestamp, windowHalf = 0.1) {
+        const startTime = timestamp - windowHalf;
+        const endTime = timestamp + windowHalf;
+
+        const windowSnapshots = this.rollingBuffer.filter(
+            s => s.timestamp >= startTime && s.timestamp <= endTime
+        );
+
+        if (windowSnapshots.length === 0) {
+            return { snapshots: [], avgRms: 0, maxPeak: 0, startTime, endTime, empty: true };
+        }
+
+        const avgRms = windowSnapshots.reduce((sum, s) => sum + s.rms, 0) / windowSnapshots.length;
+        const maxPeak = Math.max(...windowSnapshots.map(s => s.peak));
+
+        return {
+            snapshots: windowSnapshots,
+            avgRms,
+            maxPeak,
+            startTime,
+            endTime,
+            sampleCount: windowSnapshots.length,
+            empty: false
+        };
+    }
+
+    /**
+     * Get the current duration of data in the rolling buffer
+     */
+    getRollingBufferDuration() {
+        if (this.rollingBuffer.length < 2) return 0;
+        return this.rollingBuffer[this.rollingBuffer.length - 1].timestamp - this.rollingBuffer[0].timestamp;
+    }
+
+    /**
+     * Set rolling buffer max duration
+     */
+    setRollingBufferDuration(seconds) {
+        this.rollingBufferMaxDuration = Math.max(5, Math.min(120, seconds));
+    }
+
+    /**
      * Update analyser settings
      * @param {Object} settings - Settings object
      */
@@ -261,6 +391,8 @@ class AudioProcessor {
         if (this.audioContext) {
             this.audioContext.close();
         }
+
+        this.rollingBuffer = [];
 
         console.log('Audio processor disposed');
     }

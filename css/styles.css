@@ -1400,6 +1400,293 @@ body.transparent {
     display: block !important;
 }
 
+/* ===================================================================
+   SOURCE SELECTION MODAL
+   =================================================================== */
+.source-selection-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.source-modal-content {
+    background: var(--panel-bg);
+    border: 2px solid var(--primary-green);
+    border-radius: 12px;
+    width: 500px;
+    max-width: 90%;
+    box-shadow: 0 0 30px var(--glow-green);
+}
+
+.source-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.source-modal-header h3 {
+    color: var(--primary-green);
+    font-family: 'Courier New', monospace;
+    margin: 0;
+}
+
+.source-modal-body {
+    padding: 20px;
+}
+
+.source-option {
+    margin-bottom: 15px;
+}
+
+.source-option h4 {
+    color: var(--text-primary);
+    margin: 0 0 5px 0;
+}
+
+.source-option p {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    margin: 0 0 10px 0;
+}
+
+.source-divider {
+    text-align: center;
+    color: var(--text-secondary);
+    margin: 15px 0;
+    position: relative;
+}
+
+.source-divider::before,
+.source-divider::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 40%;
+    height: 1px;
+    background: var(--border-color);
+}
+
+.source-divider::before { left: 0; }
+.source-divider::after { right: 0; }
+
+.vdo-input-group {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.vdo-url-input {
+    flex: 1;
+    background: var(--dark-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text-primary);
+    font-family: 'Courier New', monospace;
+    font-size: 0.85em;
+}
+
+.vdo-url-input:focus {
+    outline: none;
+    border-color: var(--primary-green);
+    box-shadow: 0 0 8px var(--glow-green);
+}
+
+.connection-status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85em;
+    color: var(--text-secondary);
+}
+
+.connection-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+}
+
+.connection-dot.connected {
+    background: var(--primary-green);
+    box-shadow: 0 0 6px var(--glow-green);
+}
+
+.connection-dot.connecting {
+    background: var(--warning-yellow);
+    animation: blink 0.8s ease-in-out infinite;
+}
+
+.connection-dot.error {
+    background: var(--spike-red);
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* Connection Badge in Feed Header */
+.feed-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.connection-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    font-family: 'Courier New', monospace;
+    background: rgba(0, 255, 65, 0.1);
+    border: 1px solid var(--primary-green);
+    color: var(--primary-green);
+}
+
+.connection-badge.vdo-connected {
+    background: rgba(0, 255, 65, 0.15);
+}
+
+.connection-badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--primary-green);
+    animation: liveBlink 1s ease-in-out infinite;
+}
+
+/* VDO.ninja Iframe */
+.vdo-ninja-iframe {
+    width: 100%;
+    height: 100%;
+    min-height: 300px;
+    border: none;
+    background: black;
+    display: block;
+}
+
+/* ===================================================================
+   DVR CONTROLS
+   =================================================================== */
+.dvr-controls {
+    background: var(--panel-bg-light);
+    padding: 10px 15px;
+    border-top: 1px solid var(--border-color);
+}
+
+.dvr-timeline-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.dvr-timeline {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--meter-bg);
+    outline: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+}
+
+.dvr-timeline::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--primary-green);
+    cursor: pointer;
+    box-shadow: 0 0 6px var(--glow-green);
+}
+
+.dvr-timeline::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+}
+
+.dvr-time-display {
+    color: var(--text-secondary);
+    font-size: 0.8em;
+    font-family: 'Courier New', monospace;
+    min-width: 40px;
+    text-align: center;
+}
+
+.dvr-live-btn {
+    background: var(--button-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8em;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 1px;
+}
+
+.dvr-live-btn.active {
+    background: var(--live-red);
+    color: white;
+    border-color: var(--live-red);
+    box-shadow: 0 0 8px rgba(255, 0, 0, 0.4);
+}
+
+.dvr-live-btn:hover {
+    border-color: var(--live-red);
+}
+
+.dvr-playback-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+}
+
+.dvr-speed-btn {
+    background: var(--button-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dvr-speed-btn:hover {
+    border-color: var(--primary-green);
+    color: var(--primary-green);
+}
+
+.dvr-speed-btn.active {
+    background: var(--primary-green);
+    color: var(--dark-bg);
+    border-color: var(--primary-green);
+    font-weight: bold;
+}
+
+.dvr-separator {
+    color: var(--text-muted);
+    margin: 0 4px;
+}
+
 .monitoring .main-header {
     animation: headerPulse 2s ease-in-out infinite;
 }

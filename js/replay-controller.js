@@ -8,7 +8,7 @@ class ReplayController {
     constructor() {
         // Replay buffer (circular buffer)
         this.buffer = [];
-        this.maxBufferSize = 30; // seconds
+        this.maxBufferSize = 60; // seconds - extended for full DRS review
         this.bufferFPS = 30;
 
         // Replay state
@@ -23,6 +23,10 @@ class ReplayController {
 
         // Replay clips
         this.savedClips = [];
+
+        // Spike markers within the buffer timeline
+        this.spikeMarkers = [];
+        this.maxSpikeMarkers = 50;
 
         // Callbacks
         this.onReplayReady = null;
@@ -85,6 +89,24 @@ class ReplayController {
     }
 
     /**
+     * Start recording directly from a MediaStream (e.g., tab capture)
+     * Skips canvas capture — uses the stream directly for MediaRecorder
+     * @param {MediaStream} stream - MediaStream with video+audio tracks
+     */
+    startRecordingFromStream(stream) {
+        try {
+            this.isRecording = true;
+            this.capturedStream = stream;
+            this.setupMediaRecorder(stream);
+            console.log('Replay buffer recording started from stream');
+            return true;
+        } catch (error) {
+            console.error('Failed to start recording from stream:', error);
+            return false;
+        }
+    }
+
+    /**
      * Setup MediaRecorder for stream capture
      * @param {MediaStream} stream - Media stream
      */
@@ -105,11 +127,14 @@ class ReplayController {
 
             this.mediaRecorder.ondataavailable = (event) => {
                 if (event.data && event.data.size > 0) {
-                    this.recordedChunks.push(event.data);
+                    this.recordedChunks.push({
+                        data: event.data,
+                        timestamp: Date.now()
+                    });
 
-                    // Keep only last N seconds
-                    const targetSize = this.maxBufferSize * 1000; // rough estimate
-                    while (this.recordedChunks.length > targetSize / 100) {
+                    // Remove chunks older than maxBufferSize seconds
+                    const cutoff = Date.now() - (this.maxBufferSize * 1000);
+                    while (this.recordedChunks.length > 0 && this.recordedChunks[0].timestamp < cutoff) {
                         this.recordedChunks.shift();
                     }
 
@@ -165,8 +190,9 @@ class ReplayController {
                 throw new Error('No recorded data available');
             }
 
-            // Create blob from recorded chunks
-            const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
+            // Extract Blob data from timestamped chunks
+            const blobParts = this.recordedChunks.map(chunk => chunk.data || chunk);
+            const blob = new Blob(blobParts, { type: 'video/webm' });
 
             console.log('Instant replay created:', blob.size, 'bytes');
 
@@ -237,7 +263,7 @@ class ReplayController {
      * @param {number} duration - Duration in seconds
      */
     setReplayDuration(duration) {
-        this.replayDuration = Math.max(2, Math.min(30, duration));
+        this.replayDuration = Math.max(2, Math.min(60, duration));
         console.log('Replay duration set to:', this.replayDuration, 'seconds');
     }
 
@@ -295,6 +321,49 @@ class ReplayController {
             this.savedClips.splice(index, 1);
             console.log('Clip deleted:', clipId);
         }
+    }
+
+    /**
+     * Mark a spike timestamp in the buffer timeline
+     */
+    markSpike(timestamp, spikeData = {}) {
+        this.spikeMarkers.push({
+            timestamp: timestamp,
+            wallTime: Date.now(),
+            data: spikeData
+        });
+
+        if (this.spikeMarkers.length > this.maxSpikeMarkers) {
+            this.spikeMarkers.shift();
+        }
+    }
+
+    /**
+     * Get all spike markers within the current buffer window
+     */
+    getSpikeMarkers() {
+        return this.spikeMarkers;
+    }
+
+    /**
+     * Get the full DVR buffer as a single Blob for scrubbing playback
+     * @returns {Blob|null} The full buffer blob or null
+     */
+    getDvrBlob() {
+        if (this.recordedChunks.length === 0) return null;
+        const blobParts = this.recordedChunks.map(chunk => chunk.data || chunk);
+        return new Blob(blobParts, { type: 'video/webm' });
+    }
+
+    /**
+     * Get DVR buffer duration in seconds based on recorded chunks
+     * @returns {number} Duration in seconds
+     */
+    getDvrBufferDuration() {
+        if (this.recordedChunks.length < 2) return 0;
+        const oldest = this.recordedChunks[0].timestamp;
+        const newest = this.recordedChunks[this.recordedChunks.length - 1].timestamp;
+        return (newest - oldest) / 1000;
     }
 
     /**

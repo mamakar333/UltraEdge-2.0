@@ -48,6 +48,46 @@ class LiveStreamHandler {
         };
     }
 
+    /**
+     * Check if camera stream is currently active
+     */
+    isActive() {
+        return this.isLive && this.stream !== null;
+    }
+
+    /**
+     * Get the current media stream
+     */
+    getStream() {
+        return this.stream;
+    }
+
+    /**
+     * Switch to a specific camera by device ID
+     */
+    async switchCamera(videoElement, deviceId) {
+        this.stopCamera();
+
+        try {
+            this.stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    deviceId: { exact: deviceId },
+                    width: 1280,
+                    height: 720
+                },
+                audio: true
+            });
+
+            videoElement.srcObject = this.stream;
+            this.isLive = true;
+            console.log('Camera switched to device:', deviceId);
+            return true;
+        } catch (error) {
+            console.error('Failed to switch camera:', error);
+            return false;
+        }
+    }
+
     dispose() {
         this.stopCamera();
     }

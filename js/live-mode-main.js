@@ -1,6 +1,8 @@
 /**
  * Live Mode Main Controller
  * Orchestrates all components for live stream monitoring
+ * Supports VDO.ninja remote streams and local camera sources
+ * Features: Tab audio capture, DVR scrubbing, slow motion playback
  */
 
 class LiveModeApp {
@@ -14,23 +16,29 @@ class LiveModeApp {
         this.decisionSystem = new DecisionSystem();
         this.hotSpotOverlay = null;
         this.liveStreamHandler = new LiveStreamHandler();
-        this.multiCameraSync = new MultiCameraSync();
+        this.vdoNinjaConnector = new VdoNinjaConnector();
 
         // State
         this.isMonitoring = false;
+        this.currentSource = 'none'; // 'none', 'local', 'vdo-ninja'
         this.eventLog = [];
+
+        // DVR state
+        this.isDvrMode = false; // true = showing buffered playback, false = live
+        this.dvrBlobUrl = null;
+        this.dvrUpdateInterval = null;
 
         this.init();
     }
 
     async init() {
+        console.log('LiveModeApp init() called');
+
         // Get UI elements
         this.elements = {
             // Video feeds
             mainCameraFeed: document.getElementById('mainCameraFeed'),
-            camera1Feed: document.getElementById('camera1Feed'),
-            camera2Feed: document.getElementById('camera2Feed'),
-            camera3Feed: document.getElementById('camera3Feed'),
+            dvrPlaybackVideo: document.getElementById('dvrPlaybackVideo'),
             // Canvases
             liveWaveformCanvas: document.getElementById('liveWaveformCanvas'),
             liveHotspotCanvas: document.getElementById('liveHotspotCanvas'),
@@ -40,6 +48,7 @@ class LiveModeApp {
             stopMonitoringBtn: document.getElementById('stopMonitoringBtn'),
             instantReplayLiveBtn: document.getElementById('instantReplayLiveBtn'),
             reviewDecisionBtn: document.getElementById('reviewDecisionBtn'),
+            captureFrameBtn: document.getElementById('captureFrameBtn'),
             // Settings
             liveSensitivitySlider: document.getElementById('liveSensitivitySlider'),
             liveThresholdSlider: document.getElementById('liveThresholdSlider'),
@@ -51,10 +60,32 @@ class LiveModeApp {
             ballTrackingToggle: document.getElementById('ballTrackingToggle'),
             // Camera selects
             selectMainCameraBtn: document.getElementById('selectMainCameraBtn'),
-            // Event log
+            // Source selection modal
+            sourceSelectionModal: document.getElementById('sourceSelectionModal'),
+            closeSourceModalBtn: document.getElementById('closeSourceModalBtn'),
+            selectLocalCameraBtn: document.getElementById('selectLocalCameraBtn'),
+            vdoNinjaUrl: document.getElementById('vdoNinjaUrl'),
+            connectVdoBtn: document.getElementById('connectVdoBtn'),
+            connectionDot: document.getElementById('connectionDot'),
+            connectionStatusText: document.getElementById('connectionStatusText'),
+            // Connection badge in feed header
+            mainCameraConnectionBadge: document.getElementById('mainCameraConnectionBadge'),
+            mainCameraConnectionText: document.getElementById('mainCameraConnectionText'),
+            // DVR controls
+            dvrControls: document.getElementById('dvrControls'),
+            dvrTimeline: document.getElementById('dvrTimeline'),
+            dvrCurrentTime: document.getElementById('dvrCurrentTime'),
+            dvrTotalTime: document.getElementById('dvrTotalTime'),
+            dvrLiveBtn: document.getElementById('dvrLiveBtn'),
+            dvrPlayPauseBtn: document.getElementById('dvrPlayPauseBtn'),
+            dvrStepBackBtn: document.getElementById('dvrStepBackBtn'),
+            dvrStepFwdBtn: document.getElementById('dvrStepFwdBtn'),
+            // Status bar (event log & spike history are commented out in HTML)
             eventLog: document.getElementById('eventLog'),
             spikeHistoryList: document.getElementById('spikeHistoryList')
         };
+
+        console.log('Elements:', this.elements.selectMainCameraBtn ? 'Found' : 'NOT FOUND');
 
         this.setupEventListeners();
         this.initializeVisualizers();
@@ -80,7 +111,9 @@ class LiveModeApp {
 
         this.elements.bufferSizeSlider?.addEventListener('input', (e) => {
             document.getElementById('bufferSize').textContent = e.target.value;
-            this.replayController.setBufferSize(parseInt(e.target.value));
+            const size = parseInt(e.target.value);
+            this.replayController.setBufferSize(size);
+            this.audioProcessor.setRollingBufferDuration(size);
         });
 
         // Transparent background
@@ -105,16 +138,70 @@ class LiveModeApp {
             }
         });
 
-        // Replay
+        // Replay & Review
         this.elements.instantReplayLiveBtn?.addEventListener('click', () => this.triggerInstantReplay());
         this.elements.reviewDecisionBtn?.addEventListener('click', () => this.reviewDecision());
 
-        // Camera selection
-        this.elements.selectMainCameraBtn?.addEventListener('click', () => this.selectCamera('main'));
+        // Capture frame
+        this.elements.captureFrameBtn?.addEventListener('click', () => this.captureFrame());
+
+        // Camera selection - opens source modal
+        console.log('Setting up selectMainCameraBtn listener, element:', this.elements.selectMainCameraBtn);
+        this.elements.selectMainCameraBtn?.addEventListener('click', () => {
+            console.log('Select Source button clicked!');
+            this.selectCamera('main');
+        });
+
+        // Source selection modal
+        this.elements.closeSourceModalBtn?.addEventListener('click', () => this.hideSourceSelectionModal());
+        this.elements.selectLocalCameraBtn?.addEventListener('click', () => this.selectLocalCamera());
+        this.elements.connectVdoBtn?.addEventListener('click', () => this.connectVdoNinja());
+
+        // Close modal on overlay click
+        this.elements.sourceSelectionModal?.addEventListener('click', (e) => {
+            if (e.target === this.elements.sourceSelectionModal) {
+                this.hideSourceSelectionModal();
+            }
+        });
+
+        // Allow Enter key to connect VDO.ninja
+        this.elements.vdoNinjaUrl?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.connectVdoNinja();
+        });
+
+        // DVR controls
+        this.setupDvrEventListeners();
+    }
+
+    setupDvrEventListeners() {
+        // Timeline slider - user drags to scrub
+        this.elements.dvrTimeline?.addEventListener('input', (e) => {
+            this.onDvrTimelineInput(parseFloat(e.target.value));
+        });
+
+        // LIVE button
+        this.elements.dvrLiveBtn?.addEventListener('click', () => this.jumpToLive());
+
+        // Play/Pause
+        this.elements.dvrPlayPauseBtn?.addEventListener('click', () => this.toggleDvrPlayPause());
+
+        // Step back/forward
+        this.elements.dvrStepBackBtn?.addEventListener('click', () => this.dvrStep(-5));
+        this.elements.dvrStepFwdBtn?.addEventListener('click', () => this.dvrStep(5));
+
+        // Speed buttons
+        document.querySelectorAll('.dvr-speed-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const speed = parseFloat(e.target.dataset.speed);
+                this.setDvrPlaybackSpeed(speed);
+                // Update active state
+                document.querySelectorAll('.dvr-speed-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+            });
+        });
     }
 
     initializeVisualizers() {
-        // Initialize components
         this.waveformVisualizer = new WaveformVisualizer(this.elements.liveWaveformCanvas);
         this.hotSpotOverlay = new HotSpotOverlay(this.elements.liveHotspotCanvas);
         this.ballTracker = new BallTracker(this.elements.ballTrackingViz);
@@ -124,29 +211,236 @@ class LiveModeApp {
         console.log('Visualizers initialized');
     }
 
+    // =========================================================================
+    // Source Selection
+    // =========================================================================
+
+    selectCamera(cameraType) {
+        if (cameraType === 'main') {
+            this.showSourceSelectionModal();
+        }
+    }
+
+    showSourceSelectionModal() {
+        console.log('showSourceSelectionModal() called');
+        const modal = this.elements.sourceSelectionModal;
+        console.log('Modal element:', modal);
+        if (modal) {
+            modal.style.display = 'flex';
+            this.updateModalConnectionStatus();
+        } else {
+            console.error('Source selection modal not found!');
+        }
+    }
+
+    hideSourceSelectionModal() {
+        const modal = this.elements.sourceSelectionModal;
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    updateModalConnectionStatus() {
+        const dot = this.elements.connectionDot;
+        const text = this.elements.connectionStatusText;
+        if (!dot || !text) return;
+
+        dot.className = 'connection-dot';
+
+        if (this.currentSource === 'vdo-ninja' && this.vdoNinjaConnector.isConnected) {
+            dot.classList.add('connected');
+            text.textContent = 'Connected to VDO.ninja';
+        } else if (this.currentSource === 'local' && this.liveStreamHandler.isActive()) {
+            dot.classList.add('connected');
+            text.textContent = 'Local Camera Active';
+        } else {
+            text.textContent = 'Not Connected';
+        }
+    }
+
+    async selectLocalCamera() {
+        try {
+            // Disconnect VDO.ninja if active
+            if (this.currentSource === 'vdo-ninja') {
+                this.vdoNinjaConnector.disconnect();
+                this.elements.mainCameraFeed.style.display = 'block';
+            }
+
+            const cameraStarted = await this.liveStreamHandler.startCamera(this.elements.mainCameraFeed);
+            if (cameraStarted) {
+                this.currentSource = 'local';
+                this.updateSourceUI('local');
+                this.hideSourceSelectionModal();
+                this.logEvent('Local camera connected', 'system');
+            }
+        } catch (error) {
+            console.error('Failed to select local camera:', error);
+            this.logEvent('Failed to connect local camera', 'error');
+        }
+    }
+
+    async connectVdoNinja() {
+        const urlInput = this.elements.vdoNinjaUrl;
+        const url = urlInput?.value.trim();
+
+        if (!url) {
+            alert('Please enter a VDO.ninja URL');
+            return;
+        }
+
+        if (!url.includes('vdo.ninja')) {
+            alert('Please enter a valid VDO.ninja URL (e.g., https://vdo.ninja/?view=STREAM_ID)');
+            return;
+        }
+
+        try {
+            // Update modal status to connecting
+            if (this.elements.connectionDot) {
+                this.elements.connectionDot.className = 'connection-dot connecting';
+            }
+            if (this.elements.connectionStatusText) {
+                this.elements.connectionStatusText.textContent = 'Connecting...';
+            }
+
+            // Stop local camera if active
+            if (this.currentSource === 'local') {
+                this.liveStreamHandler.stopCamera();
+            }
+
+            // Hide the <video> element, show iframe instead
+            this.elements.mainCameraFeed.style.display = 'none';
+
+            // Get the video-container div
+            const videoContainer = this.elements.mainCameraFeed.parentElement;
+
+            // Setup callbacks
+            this.vdoNinjaConnector.onConnectionChange = (connected, info) => {
+                if (connected) {
+                    this.currentSource = 'vdo-ninja';
+                    this.updateSourceUI('vdo-ninja');
+                    this.logEvent('VDO.ninja stream connected', 'system');
+
+                    // Request the MediaStream from VDO.ninja
+                    setTimeout(() => {
+                        this.vdoNinjaConnector.requestStream();
+                    }, 1000);
+
+                    // Show LIVE indicator
+                    const liveIndicator = document.getElementById('liveIndicator');
+                    if (liveIndicator) liveIndicator.style.display = 'flex';
+                } else {
+                    this.currentSource = 'none';
+                    this.updateSourceUI('none');
+                    this.logEvent('VDO.ninja stream disconnected', 'system');
+                }
+                this.updateModalConnectionStatus();
+            };
+
+            // Callback when VDO.ninja sends us the MediaStream
+            this.vdoNinjaConnector.onStreamReceived = (stream) => {
+                console.log('VDO.ninja MediaStream received!', stream);
+                this.logEvent('VDO.ninja MediaStream received with audio', 'system');
+            };
+
+            this.vdoNinjaConnector.onError = (error) => {
+                this.logEvent('VDO.ninja error: ' + error.message, 'error');
+                if (this.elements.connectionDot) {
+                    this.elements.connectionDot.className = 'connection-dot error';
+                }
+                if (this.elements.connectionStatusText) {
+                    this.elements.connectionStatusText.textContent = 'Connection Error';
+                }
+            };
+
+            // Connect
+            this.vdoNinjaConnector.connect(url, videoContainer);
+            this.hideSourceSelectionModal();
+
+        } catch (error) {
+            console.error('Failed to connect VDO.ninja:', error);
+            alert('Failed to connect to VDO.ninja: ' + error.message);
+        }
+    }
+
+    updateSourceUI(sourceType) {
+        const badge = this.elements.mainCameraConnectionBadge;
+        const badgeText = this.elements.mainCameraConnectionText;
+        const activeCameras = document.getElementById('activeCameras');
+        const liveIndicator = document.getElementById('liveIndicator');
+
+        if (sourceType === 'vdo-ninja') {
+            if (badge) {
+                badge.style.display = 'inline-flex';
+                badge.classList.add('vdo-connected');
+            }
+            if (badgeText) badgeText.textContent = 'VDO.ninja';
+            if (liveIndicator) liveIndicator.style.display = 'flex';
+        } else if (sourceType === 'local') {
+            if (badge) {
+                badge.style.display = 'inline-flex';
+                badge.classList.remove('vdo-connected');
+            }
+            if (badgeText) badgeText.textContent = 'Local';
+            if (liveIndicator) liveIndicator.style.display = 'flex';
+        } else {
+            if (badge) badge.style.display = 'none';
+            if (liveIndicator) liveIndicator.style.display = 'none';
+        }
+
+        if (activeCameras) {
+            const count = (sourceType !== 'none') ? 1 : 0;
+            activeCameras.textContent = `${count}/4`;
+        }
+    }
+
+    // =========================================================================
+    // Monitoring
+    // =========================================================================
+
     async startMonitoring() {
         try {
             this.updateStatus('Initializing...', 'active');
 
-            // Start camera
-            const cameraStarted = await this.liveStreamHandler.startCamera(
-                this.elements.mainCameraFeed
-            );
-
-            if (!cameraStarted) {
-                this.updateStatus('Failed to start camera', 'error');
+            // Require a source to be selected before monitoring
+            if (this.currentSource === 'none') {
+                alert('Please select a video source first.\n\nClick "SELECT SOURCE" to choose:\n• Local Camera (your device camera)\n• VDO.ninja (remote stream from phone/camera)');
+                this.updateStatus('No source selected', 'error');
                 return;
             }
 
-            // Initialize audio processor
-            const audioInitialized = await this.audioProcessor.initialize();
+            let audioInitialized = false;
+
+            if (this.currentSource === 'vdo-ninja') {
+                // For VDO.ninja: ONLY use the MediaStream from VDO.ninja iframe
+                const vdoStream = this.vdoNinjaConnector.getMediaStream();
+
+                if (vdoStream && vdoStream.getAudioTracks().length > 0) {
+                    audioInitialized = await this.audioProcessor.initializeFromStream(vdoStream);
+                    // Also start DVR recording from VDO.ninja stream
+                    this.replayController.startRecordingFromStream(vdoStream);
+                    this.logEvent('Using VDO.ninja audio for spike detection', 'system');
+                } else {
+                    // Stream not available - show error, don't fall back
+                    alert('VDO.ninja stream not ready.\n\nPlease ensure:\n1. VDO.ninja is connected (check for LIVE indicator)\n2. The remote device is streaming\n3. Try disconnecting and reconnecting');
+                    this.updateStatus('VDO.ninja stream not available', 'error');
+                    this.logEvent('VDO.ninja stream not available - cannot start monitoring', 'error');
+                    return;
+                }
+            } else if (this.currentSource === 'local') {
+                // For local camera: use microphone audio
+                audioInitialized = await this.audioProcessor.initialize();
+            } else {
+                alert('Unknown source type. Please select a source again.');
+                this.updateStatus('Invalid source', 'error');
+                return;
+            }
 
             if (!audioInitialized) {
                 this.updateStatus('Failed to initialize audio', 'error');
                 return;
             }
 
-            // Setup callbacks
+            // Setup audio data callbacks
             this.audioProcessor.onAudioData = (data) => {
                 // Update waveform
                 this.waveformVisualizer.draw(data.waveform);
@@ -170,7 +464,15 @@ class LiveModeApp {
             this.waveformVisualizer.start();
 
             // Start replay buffer recording
-            this.replayController.startRecording(this.elements.mainCameraFeed);
+            if (this.currentSource === 'local') {
+                this.replayController.startRecording(this.elements.mainCameraFeed);
+            }
+            // For VDO.ninja, DVR recording already started above if stream is available
+
+            // Show DVR controls
+            if (this.elements.dvrControls) {
+                this.elements.dvrControls.style.display = 'block';
+            }
 
             // Update UI
             this.isMonitoring = true;
@@ -178,14 +480,23 @@ class LiveModeApp {
             this.elements.stopMonitoringBtn.disabled = false;
             this.elements.instantReplayLiveBtn.disabled = false;
             this.elements.reviewDecisionBtn.disabled = false;
+            if (this.elements.captureFrameBtn) this.elements.captureFrameBtn.disabled = false;
 
             document.querySelector('.main-container').classList.add('monitoring');
 
             this.updateStatus('LIVE MONITORING', 'active');
             this.logEvent('Monitoring started', 'system');
 
-            // Start timestamp counter
+            const vdoStream = this.vdoNinjaConnector.getMediaStream();
+            const audioSource = this.currentSource === 'vdo-ninja' && vdoStream ?
+                'VDO.ninja stream (direct)' :
+                (this.currentSource === 'vdo-ninja' ? 'microphone (VDO.ninja stream pending)' : 'microphone');
+            this.logEvent(`Audio source: ${audioSource} (${this.audioProcessor.getSampleRate()}Hz)`, 'system');
+
+            // Start timestamp counter & buffer status updater
             this.startTimestampCounter();
+            this.startBufferStatusUpdater();
+            this.startDvrTimelineUpdater();
 
             console.log('Live monitoring started');
         } catch (error) {
@@ -195,36 +506,294 @@ class LiveModeApp {
         }
     }
 
+
     stopMonitoring() {
         this.audioProcessor.stop();
         this.waveformVisualizer.stop();
-        this.liveStreamHandler.stopCamera();
+
+        // Only stop local camera if that's the source — VDO.ninja stays connected
+        if (this.currentSource === 'local') {
+            this.liveStreamHandler.stopCamera();
+            this.currentSource = 'none';
+            this.updateSourceUI('none');
+        }
+
         this.replayController.stopRecording();
+
+        // Exit DVR mode if active
+        if (this.isDvrMode) {
+            this.jumpToLive();
+        }
+
+        // Hide DVR controls
+        if (this.elements.dvrControls) {
+            this.elements.dvrControls.style.display = 'none';
+        }
 
         this.isMonitoring = false;
         this.elements.startMonitoringBtn.disabled = false;
         this.elements.stopMonitoringBtn.disabled = true;
         this.elements.instantReplayLiveBtn.disabled = true;
         this.elements.reviewDecisionBtn.disabled = true;
+        if (this.elements.captureFrameBtn) this.elements.captureFrameBtn.disabled = true;
 
         document.querySelector('.main-container').classList.remove('monitoring');
 
         this.updateStatus('Stopped', '');
         this.logEvent('Monitoring stopped', 'system');
         this.stopTimestampCounter();
+        this.stopBufferStatusUpdater();
+        this.stopDvrTimelineUpdater();
 
         console.log('Live monitoring stopped');
     }
 
+    // =========================================================================
+    // DVR Scrubbing & Slow Motion
+    // =========================================================================
+
+    /**
+     * Called when user drags the DVR timeline slider
+     */
+    onDvrTimelineInput(value) {
+        const maxVal = parseFloat(this.elements.dvrTimeline.max);
+
+        // If slider is at the max (live edge), return to live
+        if (value >= maxVal - 0.5) {
+            this.jumpToLive();
+            return;
+        }
+
+        // Enter DVR mode
+        if (!this.isDvrMode) {
+            this.enterDvrMode();
+        }
+
+        // Seek DVR video to the position
+        const dvrVideo = this.elements.dvrPlaybackVideo;
+        if (dvrVideo && dvrVideo.duration && isFinite(dvrVideo.duration)) {
+            const seekTime = (value / maxVal) * dvrVideo.duration;
+            dvrVideo.currentTime = seekTime;
+        }
+    }
+
+    /**
+     * Enter DVR mode — swap from live iframe/video to buffered playback
+     */
+    enterDvrMode() {
+        if (this.isDvrMode) return;
+        this.isDvrMode = true;
+
+        // Create blob from DVR buffer
+        const blob = this.replayController.getDvrBlob();
+        if (!blob) {
+            console.warn('No DVR data available');
+            return;
+        }
+
+        // Revoke previous URL
+        if (this.dvrBlobUrl) {
+            URL.revokeObjectURL(this.dvrBlobUrl);
+        }
+        this.dvrBlobUrl = URL.createObjectURL(blob);
+
+        const dvrVideo = this.elements.dvrPlaybackVideo;
+        if (dvrVideo) {
+            dvrVideo.src = this.dvrBlobUrl;
+            dvrVideo.style.display = 'block';
+            dvrVideo.muted = false;
+            dvrVideo.play();
+        }
+
+        // Hide live feed (iframe or local video)
+        if (this.currentSource === 'vdo-ninja') {
+            const iframe = this.vdoNinjaConnector.getIframe();
+            if (iframe) iframe.style.display = 'none';
+        } else {
+            this.elements.mainCameraFeed.style.display = 'none';
+        }
+
+        // Update LIVE button
+        if (this.elements.dvrLiveBtn) {
+            this.elements.dvrLiveBtn.classList.remove('active');
+        }
+
+        // Update play/pause button
+        if (this.elements.dvrPlayPauseBtn) {
+            this.elements.dvrPlayPauseBtn.innerHTML = '&#9646;&#9646; Pause';
+        }
+
+        this.logEvent('DVR scrubbing activated', 'system');
+    }
+
+    /**
+     * Jump back to live edge
+     */
+    jumpToLive() {
+        if (!this.isDvrMode) return;
+        this.isDvrMode = false;
+
+        const dvrVideo = this.elements.dvrPlaybackVideo;
+        if (dvrVideo) {
+            dvrVideo.pause();
+            dvrVideo.src = '';
+            dvrVideo.style.display = 'none';
+        }
+
+        if (this.dvrBlobUrl) {
+            URL.revokeObjectURL(this.dvrBlobUrl);
+            this.dvrBlobUrl = null;
+        }
+
+        // Show live feed again
+        if (this.currentSource === 'vdo-ninja') {
+            const iframe = this.vdoNinjaConnector.getIframe();
+            if (iframe) iframe.style.display = 'block';
+        } else {
+            this.elements.mainCameraFeed.style.display = 'block';
+        }
+
+        // Reset slider to max
+        if (this.elements.dvrTimeline) {
+            this.elements.dvrTimeline.value = this.elements.dvrTimeline.max;
+        }
+
+        // Update LIVE button
+        if (this.elements.dvrLiveBtn) {
+            this.elements.dvrLiveBtn.classList.add('active');
+        }
+
+        // Reset speed buttons to 1x
+        document.querySelectorAll('.dvr-speed-btn').forEach(b => b.classList.remove('active'));
+        const btn1x = document.querySelector('.dvr-speed-btn[data-speed="1"]');
+        if (btn1x) btn1x.classList.add('active');
+
+        this.logEvent('Returned to LIVE', 'system');
+    }
+
+    toggleDvrPlayPause() {
+        const dvrVideo = this.elements.dvrPlaybackVideo;
+        if (!dvrVideo || !this.isDvrMode) return;
+
+        if (dvrVideo.paused) {
+            dvrVideo.play();
+            if (this.elements.dvrPlayPauseBtn) {
+                this.elements.dvrPlayPauseBtn.innerHTML = '&#9646;&#9646; Pause';
+            }
+        } else {
+            dvrVideo.pause();
+            if (this.elements.dvrPlayPauseBtn) {
+                this.elements.dvrPlayPauseBtn.innerHTML = '&#9654; Play';
+            }
+        }
+    }
+
+    dvrStep(seconds) {
+        const dvrVideo = this.elements.dvrPlaybackVideo;
+
+        if (!this.isDvrMode) {
+            // If in live mode and stepping back, enter DVR mode first
+            this.enterDvrMode();
+            if (!dvrVideo) return;
+
+            // Wait for video metadata to load then seek
+            dvrVideo.addEventListener('loadedmetadata', () => {
+                dvrVideo.currentTime = Math.max(0, dvrVideo.duration + seconds);
+            }, { once: true });
+            return;
+        }
+
+        if (dvrVideo && dvrVideo.duration) {
+            dvrVideo.currentTime = Math.max(0, Math.min(dvrVideo.duration, dvrVideo.currentTime + seconds));
+        }
+    }
+
+    setDvrPlaybackSpeed(speed) {
+        const dvrVideo = this.elements.dvrPlaybackVideo;
+        if (dvrVideo) {
+            dvrVideo.playbackRate = speed;
+        }
+
+        // If not in DVR mode yet but user selected a speed, enter DVR
+        if (!this.isDvrMode && speed !== 1) {
+            this.enterDvrMode();
+        }
+    }
+
+    /**
+     * Periodically update the DVR timeline display
+     */
+    startDvrTimelineUpdater() {
+        this.dvrUpdateInterval = setInterval(() => {
+            const bufferDuration = this.replayController.getDvrBufferDuration();
+
+            // Update total time display
+            if (this.elements.dvrTotalTime) {
+                this.elements.dvrTotalTime.textContent = this.formatDvrTime(bufferDuration);
+            }
+
+            if (this.isDvrMode) {
+                // In DVR mode, update current time from video position
+                const dvrVideo = this.elements.dvrPlaybackVideo;
+                if (dvrVideo && dvrVideo.duration && isFinite(dvrVideo.duration)) {
+                    if (this.elements.dvrCurrentTime) {
+                        this.elements.dvrCurrentTime.textContent = this.formatDvrTime(dvrVideo.currentTime);
+                    }
+                    // Update slider position
+                    if (this.elements.dvrTimeline) {
+                        const pct = (dvrVideo.currentTime / dvrVideo.duration) * 100;
+                        this.elements.dvrTimeline.value = pct;
+                    }
+                }
+            } else {
+                // In live mode, current time = total time (live edge)
+                if (this.elements.dvrCurrentTime) {
+                    this.elements.dvrCurrentTime.textContent = this.formatDvrTime(bufferDuration);
+                }
+                if (this.elements.dvrTimeline) {
+                    this.elements.dvrTimeline.value = this.elements.dvrTimeline.max;
+                }
+            }
+        }, 500);
+    }
+
+    stopDvrTimelineUpdater() {
+        if (this.dvrUpdateInterval) {
+            clearInterval(this.dvrUpdateInterval);
+            this.dvrUpdateInterval = null;
+        }
+    }
+
+    formatDvrTime(seconds) {
+        if (!seconds || !isFinite(seconds)) return '00:00';
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${this.pad(m)}:${this.pad(s)}`;
+    }
+
+    // =========================================================================
+    // Spike Detection & Handling
+    // =========================================================================
+
     handleLiveSpike(spike) {
         console.log('Live spike detected:', spike);
+
+        // Extract +/- 100ms audio window around the spike from rolling buffer
+        const spikeWindow = this.audioProcessor.getAudioWindowAroundTimestamp(
+            spike.timestamp,
+            0.1
+        );
+        spike.audioWindow = spikeWindow;
+
+        // Mark spike in replay buffer
+        this.replayController.markSpike(spike.timestamp, {
+            magnitude: spike.magnitude,
+            rms: spike.rms
+        });
 
         // Update counter
         const count = this.spikeDetector.getSpikeCount();
         document.getElementById('liveSpikesCount').textContent = count;
-
-        // Add to spike list
-        this.addSpikeToHistory(spike);
 
         // Visualize spike line
         const spikeLine = document.getElementById('spikeLine');
@@ -235,11 +804,31 @@ class LiveModeApp {
             }, 1000);
         }
 
-        // Log event
-        this.logEvent(`Spike detected: ${(spike.magnitude * 100).toFixed(1)}%`, 'spike');
+        // Log event with window info
+        const windowInfo = spikeWindow.empty ? '' : ` (window: ${spikeWindow.sampleCount} samples)`;
+        this.logEvent(`Spike detected: ${(spike.magnitude * 100).toFixed(1)}%${windowInfo}`, 'spike');
 
         // Update last spike time
         document.getElementById('lastSpikeTime').textContent = spike.formattedTime;
+
+        // Update ball speed display with simulated data based on spike magnitude
+        const ballSpeedDisplay = document.getElementById('ballSpeedDisplay');
+        if (ballSpeedDisplay) {
+            const speed = Math.floor(80 + spike.magnitude * 80); // 80-160 km/h range
+            ballSpeedDisplay.querySelector('span').textContent = `${speed} km/h`;
+        }
+
+        // Update impact zone display
+        const impactZoneDisplay = document.getElementById('impactZoneDisplay');
+        if (impactZoneDisplay) {
+            const zones = ['Middle', 'Edge', 'Top Edge', 'Bottom Edge', 'Pad'];
+            const zone = zones[Math.floor(Math.random() * zones.length)];
+            impactZoneDisplay.querySelector('span').textContent = zone;
+        }
+
+        // Update Ultra Edge indicator in decision panel
+        document.getElementById('liveUltraEdge').textContent = 'DETECTED';
+        document.getElementById('liveUltraEdge').style.color = '#ff3333';
 
         // Auto replay if enabled
         if (this.elements.autoReplayToggle?.checked) {
@@ -250,42 +839,28 @@ class LiveModeApp {
         if (this.elements.hotspotToggle?.checked) {
             this.hotSpotOverlay.simulateHeat('bat');
             this.hotSpotOverlay.render();
+            document.getElementById('liveHotspot').textContent = 'CONTACT';
+            document.getElementById('liveHotspot').style.color = '#ff3333';
         }
 
         // Simulate ball tracking if enabled
         if (this.elements.ballTrackingToggle?.checked && !this.ballTracker.simulationActive) {
             this.ballTracker.startSimulation();
+            document.getElementById('liveBallTrack').textContent = 'IMPACT';
+            document.getElementById('liveBallTrack').style.color = '#ffaa00';
         }
     }
 
-    addSpikeToHistory(spike) {
-        const list = this.elements.spikeHistoryList;
-        if (!list) return;
-
-        const noSpikes = list.querySelector('.no-spikes');
-        if (noSpikes) noSpikes.remove();
-
-        const item = document.createElement('div');
-        item.className = 'spike-item';
-        item.innerHTML = `
-            <div style="font-weight: bold; color: #00ff41;">${spike.formattedTime}</div>
-            <div>Magnitude: ${(spike.magnitude * 100).toFixed(1)}%</div>
-        `;
-
-        list.insertBefore(item, list.firstChild);
-
-        // Limit to 10 items
-        while (list.children.length > 10) {
-            list.removeChild(list.lastChild);
-        }
-    }
+    // =========================================================================
+    // Replay & Decision
+    // =========================================================================
 
     async triggerInstantReplay() {
         try {
             const replay = await this.replayController.getInstantReplay();
 
             if (!replay) {
-                alert('No replay data available. Buffer may be empty.');
+                this.logEvent('No replay data available - buffer may be empty', 'system');
                 return;
             }
 
@@ -296,10 +871,13 @@ class LiveModeApp {
             if (replayOverlay && replayVideo) {
                 replayVideo.src = URL.createObjectURL(replay);
                 replayOverlay.style.display = 'flex';
+                replayVideo.playbackRate = 1;
+                replayVideo.play();
 
                 // Close replay
                 document.getElementById('closeReplayBtn')?.addEventListener('click', () => {
                     replayOverlay.style.display = 'none';
+                    replayVideo.pause();
                     URL.revokeObjectURL(replayVideo.src);
                 }, { once: true });
 
@@ -313,7 +891,7 @@ class LiveModeApp {
             }
         } catch (error) {
             console.error('Failed to create replay:', error);
-            alert('Failed to create instant replay');
+            this.logEvent('Failed to create instant replay', 'error');
         }
     }
 
@@ -350,12 +928,49 @@ class LiveModeApp {
         this.logEvent(`Decision: ${decision.decision} (${decision.confidence}%)`, 'decision');
     }
 
+    captureFrame() {
+        try {
+            if (this.currentSource === 'local') {
+                const video = this.elements.mainCameraFeed;
+                if (!video.videoWidth) {
+                    this.logEvent('No video data to capture', 'system');
+                    return;
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0);
+
+                const link = document.createElement('a');
+                link.download = `ultra-edge-frame-${Date.now()}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+
+                this.logEvent('Frame captured and saved', 'system');
+            } else {
+                this.logEvent('Frame capture only available for local camera source', 'system');
+            }
+        } catch (error) {
+            console.error('Failed to capture frame:', error);
+            this.logEvent('Frame capture failed', 'error');
+        }
+    }
+
+    // =========================================================================
+    // Event Log (gracefully handles missing DOM elements)
+    // =========================================================================
+
     logEvent(message, type = 'info') {
         this.eventLog.push({
             message: message,
             type: type,
             timestamp: new Date().toISOString()
         });
+
+        // Log to console since event log panel is hidden
+        const prefix = type === 'spike' ? '[SPIKE]' : type === 'error' ? '[ERROR]' : '[INFO]';
+        console.log(`${prefix} ${message}`);
 
         const log = this.elements.eventLog;
         if (!log) return;
@@ -365,8 +980,10 @@ class LiveModeApp {
 
         const item = document.createElement('div');
         item.className = 'event-item';
+        const colorMap = { spike: '#ff3333', error: '#ff3333', decision: '#ffaa00' };
+        const color = colorMap[type] || '#00ff41';
         item.innerHTML = `
-            <div style="color: ${type === 'spike' ? '#ff3333' : '#00ff41'};">
+            <div style="color: ${color};">
                 ${new Date().toLocaleTimeString()}: ${message}
             </div>
         `;
@@ -379,12 +996,9 @@ class LiveModeApp {
         }
     }
 
-    async selectCamera(cameraType) {
-        const devices = await this.liveStreamHandler.getAvailableDevices();
-        // In production, show a device selection dialog
-        console.log('Available cameras:', devices.video);
-        alert(`${devices.video.length} camera(s) available. Advanced selection coming soon!`);
-    }
+    // =========================================================================
+    // Status & Timers
+    // =========================================================================
 
     updateStatus(message, className = '') {
         const status = document.getElementById('systemStatusLive');
@@ -415,6 +1029,28 @@ class LiveModeApp {
     stopTimestampCounter() {
         if (this.timestampInterval) {
             clearInterval(this.timestampInterval);
+        }
+    }
+
+    startBufferStatusUpdater() {
+        this.bufferStatusInterval = setInterval(() => {
+            const bufferDuration = this.audioProcessor.getRollingBufferDuration();
+            const bufferStatus = document.getElementById('bufferStatus');
+            if (bufferStatus) {
+                bufferStatus.textContent = `${bufferDuration.toFixed(0)}s`;
+            }
+
+            // Update FPS display
+            const fpsDisplay = document.getElementById('liveFps');
+            if (fpsDisplay) {
+                fpsDisplay.textContent = '60';
+            }
+        }, 1000);
+    }
+
+    stopBufferStatusUpdater() {
+        if (this.bufferStatusInterval) {
+            clearInterval(this.bufferStatusInterval);
         }
     }
 
