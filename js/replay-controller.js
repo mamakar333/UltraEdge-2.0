@@ -8,7 +8,7 @@ class ReplayController {
     constructor() {
         // Replay buffer (circular buffer)
         this.buffer = [];
-        this.maxBufferSize = 60; // seconds - extended for full DRS review
+        this.maxBufferSize = 150; // seconds — keep ~2.5 min for instant replay
         this.bufferFPS = 30;
 
         // Replay state
@@ -97,31 +97,13 @@ class ReplayController {
     startRecordingFromStream(stream) {
         try {
             this.isRecording = true;
+            this.isAudioOnly = false;
             this.capturedStream = stream;
             this.setupMediaRecorder(stream, false);
-            console.log('Replay buffer recording started from stream');
+            console.log('DVR recording started (video+audio)');
             return true;
         } catch (error) {
             console.error('Failed to start recording from stream:', error);
-            return false;
-        }
-    }
-
-    /**
-     * Start audio-only recording from a MediaStream
-     * Used for VDO.ninja tab capture where we only want audio (no screen recording)
-     * @param {MediaStream} stream - Audio-only MediaStream
-     */
-    startAudioRecording(stream) {
-        try {
-            this.isRecording = true;
-            this.isAudioOnly = true;
-            this.capturedStream = stream;
-            this.setupMediaRecorder(stream, true);
-            console.log('Audio-only replay buffer recording started');
-            return true;
-        } catch (error) {
-            console.error('Failed to start audio recording:', error);
             return false;
         }
     }
