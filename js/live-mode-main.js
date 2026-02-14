@@ -41,7 +41,7 @@ class LiveModeApp {
         this.elements = {
             // Video feeds
             mainCameraFeed: document.getElementById('mainCameraFeed'),
-            dvrPlaybackVideo: document.getElementById('dvrPlaybackVideo'),
+            // dvrPlaybackVideo removed — DVR is audio-only now
             // Canvases
             liveWaveformCanvas: document.getElementById('liveWaveformCanvas'),
             liveHotspotCanvas: document.getElementById('liveHotspotCanvas'),
@@ -437,11 +437,6 @@ class LiveModeApp {
             // Hide the <video> element, show iframe instead
             this.elements.mainCameraFeed.style.display = 'none';
 
-            // Ensure DVR playback video is hidden
-            if (this.elements.dvrPlaybackVideo) {
-                this.elements.dvrPlaybackVideo.style.setProperty('display', 'none', 'important');
-            }
-
             // Get the video-container div
             const videoContainer = this.elements.mainCameraFeed.parentElement;
 
@@ -538,29 +533,40 @@ class LiveModeApp {
      */
     async captureTabAudio() {
         try {
-            console.log('Requesting tab audio capture...');
+            console.log('Requesting tab audio capture (audio only - no screen recording)...');
 
+            // Chrome requires video: true for getDisplayMedia, but we only need audio
             const stream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,  // Required by Chrome, we'll use for DVR too
+                video: true,  // Required by Chrome API, will be stopped immediately
                 audio: {
                     echoCancellation: false,
                     noiseSuppression: false,
                     autoGainControl: false
                 },
-                preferCurrentTab: true  // Pre-select current tab
+                preferCurrentTab: true
             });
 
-            console.log('Tab capture successful!');
-            console.log('Audio tracks:', stream.getAudioTracks().length);
-            console.log('Video tracks:', stream.getVideoTracks().length);
+            // IMMEDIATELY stop and remove video tracks — we do NOT want screen recording
+            const videoTracks = stream.getVideoTracks();
+            videoTracks.forEach(track => {
+                track.stop();
+                stream.removeTrack(track);
+                console.log('Stopped and removed video track — no screen recording');
+            });
 
-            this.tabCaptureStream = stream;
-            return stream;
+            console.log('Tab audio capture successful (audio only)');
+            console.log('Audio tracks:', stream.getAudioTracks().length);
+            console.log('Video tracks:', stream.getVideoTracks().length, '(should be 0)');
+
+            // Create audio-only stream
+            const audioOnlyStream = new MediaStream(stream.getAudioTracks());
+            this.tabCaptureStream = audioOnlyStream;
+            return audioOnlyStream;
 
         } catch (error) {
             console.error('Tab capture failed:', error);
             if (error.name === 'NotAllowedError') {
-                alert('Tab capture permission denied.\n\nTo capture VDO.ninja audio, please:\n1. Click "Current Tab"\n2. Check "Share audio"\n3. Click "Share"');
+                alert('Tab audio capture permission denied.\n\nTo capture VDO.ninja audio:\n1. Click "Current Tab"\n2. Check "Share audio"\n3. Click "Share"\n\nNote: This only captures audio, NOT your screen.');
             }
             return null;
         }
@@ -616,13 +622,11 @@ class LiveModeApp {
                 const tabStream = await this.captureTabAudio();
 
                 if (tabStream && tabStream.getAudioTracks().length > 0) {
-                    // Success! Use the captured tab audio for spike detection
+                    // Audio-only stream — use for spike detection and audio recording
                     audioInitialized = await this.audioProcessor.initializeFromStream(tabStream);
-                    // Also use it for DVR recording (video + audio recorded, but not displayed)
-                    this.replayController.startRecordingFromStream(tabStream);
-                    this.logEvent('✓ Using Saramonic mic audio (via tab capture)', 'system');
-                    console.log('Tab capture: Recording video+audio for DVR, using audio for spike detection');
-                    console.log('Display: VDO.ninja iframe remains visible (tab capture NOT displayed)');
+                    // Record audio-only for replay (no screen recording)
+                    this.replayController.startAudioRecording(tabStream);
+                    this.logEvent('✓ Capturing VDO.ninja audio (no screen recording)', 'system');
                 } else {
                     // Tab capture failed
                     alert('Failed to capture tab audio.\n\nYou need to:\n1. Allow tab sharing\n2. Make sure "Share audio" is checked\n\nPlease try again.');
@@ -675,12 +679,6 @@ class LiveModeApp {
             // Show DVR controls
             if (this.elements.dvrControls) {
                 this.elements.dvrControls.style.display = 'block';
-            }
-
-            // Ensure DVR playback video is hidden (only VDO.ninja iframe or camera should be visible)
-            if (this.elements.dvrPlaybackVideo) {
-                this.elements.dvrPlaybackVideo.style.setProperty('display', 'none', 'important');
-                console.log('DVR playback video hidden - showing live feed only');
             }
 
             // Update UI
@@ -770,6 +768,7 @@ class LiveModeApp {
 
     /**
      * Called when user drags the DVR timeline slider
+     * Audio-only DVR — VDO.ninja iframe stays visible at all times
      */
     onDvrTimelineInput(value) {
         const maxVal = parseFloat(this.elements.dvrTimeline.max);
@@ -780,32 +779,31 @@ class LiveModeApp {
             return;
         }
 
-        // Enter DVR mode
+        // Enter DVR mode (audio-only scrubbing)
         if (!this.isDvrMode) {
             this.enterDvrMode();
         }
 
-        // Seek DVR video to the position
-        const dvrVideo = this.elements.dvrPlaybackVideo;
-        if (dvrVideo && dvrVideo.duration && isFinite(dvrVideo.duration)) {
-            const seekTime = (value / maxVal) * dvrVideo.duration;
-            dvrVideo.currentTime = seekTime;
+        // Seek audio to the position
+        if (this.dvrAudioElement && this.dvrAudioElement.duration && isFinite(this.dvrAudioElement.duration)) {
+            const seekTime = (value / maxVal) * this.dvrAudioElement.duration;
+            this.dvrAudioElement.currentTime = seekTime;
         }
     }
 
     /**
-     * Enter DVR mode — swap from live iframe/video to buffered playback
+     * Enter DVR mode — audio-only scrubbing
+     * VDO.ninja iframe stays visible — only audio is replayed
      */
     enterDvrMode() {
         if (this.isDvrMode) return;
 
-        // Check if we have DVR data
+        // Check if we have audio DVR data
         const bufferDuration = this.replayController.getDvrBufferDuration();
-        console.log('Entering DVR mode, buffer duration:', bufferDuration, 'seconds');
+        console.log('Entering DVR mode (audio only), buffer duration:', bufferDuration, 'seconds');
 
         if (bufferDuration < 1) {
             console.warn('DVR buffer too short (< 1 second), staying in live mode');
-            alert('Not enough DVR data yet. Please wait a few seconds and try again.');
             // Reset slider to live position
             if (this.elements.dvrTimeline) {
                 this.elements.dvrTimeline.value = this.elements.dvrTimeline.max;
@@ -815,15 +813,15 @@ class LiveModeApp {
 
         this.isDvrMode = true;
 
-        // Create blob from DVR buffer
+        // Create audio blob from DVR buffer
         const blob = this.replayController.getDvrBlob();
         if (!blob) {
-            console.error('Failed to create DVR blob');
+            console.error('Failed to create DVR audio blob');
             this.isDvrMode = false;
             return;
         }
 
-        console.log('DVR blob created, size:', (blob.size / 1024 / 1024).toFixed(2), 'MB');
+        console.log('DVR audio blob created, size:', (blob.size / 1024).toFixed(1), 'KB');
 
         // Revoke previous URL
         if (this.dvrBlobUrl) {
@@ -831,37 +829,14 @@ class LiveModeApp {
         }
         this.dvrBlobUrl = URL.createObjectURL(blob);
 
-        const dvrVideo = this.elements.dvrPlaybackVideo;
-        if (dvrVideo) {
-            console.log('Setting DVR video source to blob URL');
-            dvrVideo.src = this.dvrBlobUrl;
-            dvrVideo.style.setProperty('display', 'block', 'important'); // Override CSS !important
-            dvrVideo.muted = false;
-
-            // Wait for video to be ready before playing
-            dvrVideo.addEventListener('loadedmetadata', () => {
-                console.log('DVR video loaded, duration:', dvrVideo.duration, 'seconds');
-                dvrVideo.play().catch(err => console.error('DVR play failed:', err));
-            }, { once: true });
-
-            // Add error handler
-            dvrVideo.addEventListener('error', (e) => {
-                console.error('DVR video error:', e, dvrVideo.error);
-                alert('Failed to load DVR playback. Please try again.');
-                this.jumpToLive();
-            }, { once: true });
+        // Create an audio element for DVR playback (NOT a video element)
+        if (!this.dvrAudioElement) {
+            this.dvrAudioElement = new Audio();
         }
+        this.dvrAudioElement.src = this.dvrBlobUrl;
+        this.dvrAudioElement.play().catch(err => console.error('DVR audio play failed:', err));
 
-        // Hide live feed (iframe or local video)
-        if (this.currentSource === 'vdo-ninja') {
-            const iframe = this.vdoNinjaConnector.getIframe();
-            if (iframe) {
-                iframe.style.display = 'none';
-                console.log('DVR mode: Hiding VDO.ninja iframe, showing DVR playback');
-            }
-        } else {
-            this.elements.mainCameraFeed.style.display = 'none';
-        }
+        // NOTE: VDO.ninja iframe stays visible — we do NOT hide it
 
         // Update LIVE button
         if (this.elements.dvrLiveBtn) {
@@ -883,11 +858,10 @@ class LiveModeApp {
         if (!this.isDvrMode) return;
         this.isDvrMode = false;
 
-        const dvrVideo = this.elements.dvrPlaybackVideo;
-        if (dvrVideo) {
-            dvrVideo.pause();
-            dvrVideo.src = '';
-            dvrVideo.style.setProperty('display', 'none', 'important'); // Force hidden
+        // Stop DVR audio playback
+        if (this.dvrAudioElement) {
+            this.dvrAudioElement.pause();
+            this.dvrAudioElement.src = '';
         }
 
         if (this.dvrBlobUrl) {
@@ -895,16 +869,7 @@ class LiveModeApp {
             this.dvrBlobUrl = null;
         }
 
-        // Show live feed again
-        if (this.currentSource === 'vdo-ninja') {
-            const iframe = this.vdoNinjaConnector.getIframe();
-            if (iframe) {
-                iframe.style.display = 'block';
-                console.log('LIVE mode: Showing VDO.ninja iframe, DVR playback hidden');
-            }
-        } else {
-            this.elements.mainCameraFeed.style.display = 'block';
-        }
+        // VDO.ninja iframe was never hidden — no need to show it again
 
         // Reset slider to max
         if (this.elements.dvrTimeline) {
@@ -925,16 +890,15 @@ class LiveModeApp {
     }
 
     toggleDvrPlayPause() {
-        const dvrVideo = this.elements.dvrPlaybackVideo;
-        if (!dvrVideo || !this.isDvrMode) return;
+        if (!this.dvrAudioElement || !this.isDvrMode) return;
 
-        if (dvrVideo.paused) {
-            dvrVideo.play();
+        if (this.dvrAudioElement.paused) {
+            this.dvrAudioElement.play();
             if (this.elements.dvrPlayPauseBtn) {
                 this.elements.dvrPlayPauseBtn.innerHTML = '&#9646;&#9646; Pause';
             }
         } else {
-            dvrVideo.pause();
+            this.dvrAudioElement.pause();
             if (this.elements.dvrPlayPauseBtn) {
                 this.elements.dvrPlayPauseBtn.innerHTML = '&#9654; Play';
             }
@@ -942,32 +906,26 @@ class LiveModeApp {
     }
 
     dvrStep(seconds) {
-        const dvrVideo = this.elements.dvrPlaybackVideo;
-
         if (!this.isDvrMode) {
-            // If in live mode and stepping back, enter DVR mode first
             this.enterDvrMode();
-            if (!dvrVideo) return;
+            if (!this.dvrAudioElement) return;
 
-            // Wait for video metadata to load then seek
-            dvrVideo.addEventListener('loadedmetadata', () => {
-                dvrVideo.currentTime = Math.max(0, dvrVideo.duration + seconds);
+            this.dvrAudioElement.addEventListener('loadedmetadata', () => {
+                this.dvrAudioElement.currentTime = Math.max(0, this.dvrAudioElement.duration + seconds);
             }, { once: true });
             return;
         }
 
-        if (dvrVideo && dvrVideo.duration) {
-            dvrVideo.currentTime = Math.max(0, Math.min(dvrVideo.duration, dvrVideo.currentTime + seconds));
+        if (this.dvrAudioElement && this.dvrAudioElement.duration) {
+            this.dvrAudioElement.currentTime = Math.max(0, Math.min(this.dvrAudioElement.duration, this.dvrAudioElement.currentTime + seconds));
         }
     }
 
     setDvrPlaybackSpeed(speed) {
-        const dvrVideo = this.elements.dvrPlaybackVideo;
-        if (dvrVideo) {
-            dvrVideo.playbackRate = speed;
+        if (this.dvrAudioElement) {
+            this.dvrAudioElement.playbackRate = speed;
         }
 
-        // If not in DVR mode yet but user selected a speed, enter DVR
         if (!this.isDvrMode && speed !== 1) {
             this.enterDvrMode();
         }
@@ -986,15 +944,14 @@ class LiveModeApp {
             }
 
             if (this.isDvrMode) {
-                // In DVR mode, update current time from video position
-                const dvrVideo = this.elements.dvrPlaybackVideo;
-                if (dvrVideo && dvrVideo.duration && isFinite(dvrVideo.duration)) {
+                // In DVR mode, update current time from audio position
+                const audio = this.dvrAudioElement;
+                if (audio && audio.duration && isFinite(audio.duration)) {
                     if (this.elements.dvrCurrentTime) {
-                        this.elements.dvrCurrentTime.textContent = this.formatDvrTime(dvrVideo.currentTime);
+                        this.elements.dvrCurrentTime.textContent = this.formatDvrTime(audio.currentTime);
                     }
-                    // Update slider position
                     if (this.elements.dvrTimeline) {
-                        const pct = (dvrVideo.currentTime / dvrVideo.duration) * 100;
+                        const pct = (audio.currentTime / audio.duration) * 100;
                         this.elements.dvrTimeline.value = pct;
                     }
                 }
@@ -1117,30 +1074,57 @@ class LiveModeApp {
                 return;
             }
 
-            // Show replay overlay
-            const replayOverlay = document.getElementById('replayOverlay');
-            const replayVideo = document.getElementById('replayVideo');
+            if (this.replayController.isAudioOnly) {
+                // Audio-only replay — play audio and step back the DVR slider
+                // VDO.ninja iframe stays visible
+                if (!this.dvrAudioElement) {
+                    this.dvrAudioElement = new Audio();
+                }
 
-            if (replayOverlay && replayVideo) {
-                replayVideo.src = URL.createObjectURL(replay);
-                replayOverlay.style.display = 'flex';
-                replayVideo.playbackRate = 1;
-                replayVideo.play();
+                const replayUrl = URL.createObjectURL(replay);
+                this.dvrAudioElement.src = replayUrl;
+                this.dvrAudioElement.playbackRate = 0.5; // Start at slow motion
+                this.dvrAudioElement.play();
 
-                // Close replay
-                document.getElementById('closeReplayBtn')?.addEventListener('click', () => {
-                    replayOverlay.style.display = 'none';
-                    replayVideo.pause();
-                    URL.revokeObjectURL(replayVideo.src);
+                this.isDvrMode = true;
+
+                // Update LIVE button to show we're in replay
+                if (this.elements.dvrLiveBtn) {
+                    this.elements.dvrLiveBtn.classList.remove('active');
+                }
+
+                this.logEvent('Audio instant replay triggered (0.5x speed)', 'system');
+
+                // When audio replay ends, return to live
+                this.dvrAudioElement.addEventListener('ended', () => {
+                    URL.revokeObjectURL(replayUrl);
+                    this.jumpToLive();
+                    this.logEvent('Replay ended, returned to LIVE', 'system');
                 }, { once: true });
+            } else {
+                // Video replay (local camera mode)
+                const replayOverlay = document.getElementById('replayOverlay');
+                const replayVideo = document.getElementById('replayVideo');
 
-                // Slow motion
-                document.getElementById('playSlowMotionBtn')?.addEventListener('click', () => {
-                    replayVideo.playbackRate = 0.25;
+                if (replayOverlay && replayVideo) {
+                    replayVideo.src = URL.createObjectURL(replay);
+                    replayOverlay.style.display = 'flex';
+                    replayVideo.playbackRate = 1;
                     replayVideo.play();
-                }, { once: true });
 
-                this.logEvent('Instant replay triggered', 'system');
+                    document.getElementById('closeReplayBtn')?.addEventListener('click', () => {
+                        replayOverlay.style.display = 'none';
+                        replayVideo.pause();
+                        URL.revokeObjectURL(replayVideo.src);
+                    }, { once: true });
+
+                    document.getElementById('playSlowMotionBtn')?.addEventListener('click', () => {
+                        replayVideo.playbackRate = 0.25;
+                        replayVideo.play();
+                    }, { once: true });
+
+                    this.logEvent('Instant replay triggered', 'system');
+                }
             }
         } catch (error) {
             console.error('Failed to create replay:', error);

@@ -20,6 +20,7 @@ class ReplayController {
         this.mediaRecorder = null;
         this.recordedChunks = [];
         this.capturedStream = null;
+        this.isAudioOnly = false; // Set to true for audio-only recording (no screen capture)
 
         // Replay clips
         this.savedClips = [];
@@ -97,7 +98,7 @@ class ReplayController {
         try {
             this.isRecording = true;
             this.capturedStream = stream;
-            this.setupMediaRecorder(stream);
+            this.setupMediaRecorder(stream, false);
             console.log('Replay buffer recording started from stream');
             return true;
         } catch (error) {
@@ -107,19 +108,48 @@ class ReplayController {
     }
 
     /**
+     * Start audio-only recording from a MediaStream
+     * Used for VDO.ninja tab capture where we only want audio (no screen recording)
+     * @param {MediaStream} stream - Audio-only MediaStream
+     */
+    startAudioRecording(stream) {
+        try {
+            this.isRecording = true;
+            this.isAudioOnly = true;
+            this.capturedStream = stream;
+            this.setupMediaRecorder(stream, true);
+            console.log('Audio-only replay buffer recording started');
+            return true;
+        } catch (error) {
+            console.error('Failed to start audio recording:', error);
+            return false;
+        }
+    }
+
+    /**
      * Setup MediaRecorder for stream capture
      * @param {MediaStream} stream - Media stream
+     * @param {boolean} audioOnly - If true, use audio-only MIME type
      */
-    setupMediaRecorder(stream) {
+    setupMediaRecorder(stream, audioOnly = false) {
         try {
-            const options = {
-                mimeType: 'video/webm;codecs=vp9',
-                videoBitsPerSecond: 2500000
-            };
+            let options;
 
-            // Fallback mimeTypes
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options.mimeType = 'video/webm';
+            if (audioOnly) {
+                // Audio-only recording — no screen capture
+                options = { mimeType: 'audio/webm;codecs=opus' };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = { mimeType: 'audio/webm' };
+                }
+                console.log('MediaRecorder: audio-only mode (' + options.mimeType + ')');
+            } else {
+                options = {
+                    mimeType: 'video/webm;codecs=vp9',
+                    videoBitsPerSecond: 2500000
+                };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options.mimeType = 'video/webm';
+                }
             }
 
             this.mediaRecorder = new MediaRecorder(stream, options);
@@ -192,7 +222,8 @@ class ReplayController {
 
             // Extract Blob data from timestamped chunks
             const blobParts = this.recordedChunks.map(chunk => chunk.data || chunk);
-            const blob = new Blob(blobParts, { type: 'video/webm' });
+            const mimeType = this.isAudioOnly ? 'audio/webm' : 'video/webm';
+            const blob = new Blob(blobParts, { type: mimeType });
 
             console.log('Instant replay created:', blob.size, 'bytes');
 
@@ -352,7 +383,8 @@ class ReplayController {
     getDvrBlob() {
         if (this.recordedChunks.length === 0) return null;
         const blobParts = this.recordedChunks.map(chunk => chunk.data || chunk);
-        return new Blob(blobParts, { type: 'video/webm' });
+        const mimeType = this.isAudioOnly ? 'audio/webm' : 'video/webm';
+        return new Blob(blobParts, { type: mimeType });
     }
 
     /**
