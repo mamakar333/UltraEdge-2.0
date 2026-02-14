@@ -302,6 +302,17 @@ class LiveModeApp {
 
     setupDvrEventListeners() {
         // Timeline slider - user drags to scrub
+        // Track dragging state to prevent timeupdate from interfering
+        this.isDraggingDvrSlider = false;
+
+        this.elements.dvrTimeline?.addEventListener('mousedown', () => {
+            this.isDraggingDvrSlider = true;
+        });
+
+        this.elements.dvrTimeline?.addEventListener('mouseup', () => {
+            this.isDraggingDvrSlider = false;
+        });
+
         this.elements.dvrTimeline?.addEventListener('input', (e) => {
             this.onDvrTimelineInput(parseFloat(e.target.value));
         });
@@ -812,12 +823,25 @@ class LiveModeApp {
 
         const dvrVideo = this.elements.dvrPlaybackVideo;
         if (dvrVideo) {
+            // Remove old event listeners if any
+            this.removeDvrVideoEventListeners();
+
             dvrVideo.src = this.dvrBlobUrl;
             dvrVideo.style.display = 'block';
             dvrVideo.muted = false;
-            dvrVideo.addEventListener('loadedmetadata', () => {
+
+            // Setup event-driven UI updates (like VideoSync pattern)
+            this.setupDvrVideoEventListeners();
+
+            // Auto-play when metadata loads
+            this.dvrVideoOnLoadedMetadata = () => {
+                console.log('DVR video loaded, duration:', dvrVideo.duration);
+                if (this.elements.dvrTotalTime) {
+                    this.elements.dvrTotalTime.textContent = this.formatDvrTime(dvrVideo.duration);
+                }
                 dvrVideo.play().catch(e => console.error('DVR play failed:', e));
-            }, { once: true });
+            };
+            dvrVideo.addEventListener('loadedmetadata', this.dvrVideoOnLoadedMetadata);
         }
 
         // Hide live feed, show DVR overlay
@@ -830,6 +854,84 @@ class LiveModeApp {
     }
 
     /**
+     * Setup event listeners on DVR video element for smooth scrubbing
+     * Pattern from VideoSync: event-driven updates instead of polling
+     */
+    setupDvrVideoEventListeners() {
+        const dvrVideo = this.elements.dvrPlaybackVideo;
+        if (!dvrVideo) return;
+
+        // Timeupdate: update UI as video plays
+        this.dvrVideoOnTimeUpdate = () => {
+            if (!this.isDvrMode) return;
+            if (dvrVideo.duration && isFinite(dvrVideo.duration)) {
+                // Update current time display
+                if (this.elements.dvrCurrentTime) {
+                    this.elements.dvrCurrentTime.textContent = this.formatDvrTime(dvrVideo.currentTime);
+                }
+                // Update slider position
+                if (this.elements.dvrTimeline && !this.isDraggingDvrSlider) {
+                    const pct = (dvrVideo.currentTime / dvrVideo.duration) * 100;
+                    this.elements.dvrTimeline.value = pct;
+                }
+            }
+        };
+        dvrVideo.addEventListener('timeupdate', this.dvrVideoOnTimeUpdate);
+
+        // Play/Pause events
+        this.dvrVideoOnPlay = () => {
+            if (this.elements.dvrPlayPauseBtn) {
+                this.elements.dvrPlayPauseBtn.innerHTML = '&#9646;&#9646; Pause';
+            }
+        };
+        this.dvrVideoOnPause = () => {
+            if (this.elements.dvrPlayPauseBtn) {
+                this.elements.dvrPlayPauseBtn.innerHTML = '&#9654; Play';
+            }
+        };
+        dvrVideo.addEventListener('play', this.dvrVideoOnPlay);
+        dvrVideo.addEventListener('pause', this.dvrVideoOnPause);
+
+        // Seeking events (user is scrubbing)
+        this.dvrVideoOnSeeking = () => {
+            console.log('DVR seeking to:', dvrVideo.currentTime);
+        };
+        this.dvrVideoOnSeeked = () => {
+            console.log('DVR seeked, now at:', dvrVideo.currentTime);
+        };
+        dvrVideo.addEventListener('seeking', this.dvrVideoOnSeeking);
+        dvrVideo.addEventListener('seeked', this.dvrVideoOnSeeked);
+
+        // Ended event - go back to live or loop
+        this.dvrVideoOnEnded = () => {
+            console.log('DVR video ended');
+            // Option 1: Return to live
+            // this.jumpToLive();
+            // Option 2: Pause at end
+            if (this.elements.dvrPlayPauseBtn) {
+                this.elements.dvrPlayPauseBtn.innerHTML = '&#9654; Play';
+            }
+        };
+        dvrVideo.addEventListener('ended', this.dvrVideoOnEnded);
+    }
+
+    /**
+     * Remove event listeners from DVR video element
+     */
+    removeDvrVideoEventListeners() {
+        const dvrVideo = this.elements.dvrPlaybackVideo;
+        if (!dvrVideo) return;
+
+        if (this.dvrVideoOnLoadedMetadata) dvrVideo.removeEventListener('loadedmetadata', this.dvrVideoOnLoadedMetadata);
+        if (this.dvrVideoOnTimeUpdate) dvrVideo.removeEventListener('timeupdate', this.dvrVideoOnTimeUpdate);
+        if (this.dvrVideoOnPlay) dvrVideo.removeEventListener('play', this.dvrVideoOnPlay);
+        if (this.dvrVideoOnPause) dvrVideo.removeEventListener('pause', this.dvrVideoOnPause);
+        if (this.dvrVideoOnSeeking) dvrVideo.removeEventListener('seeking', this.dvrVideoOnSeeking);
+        if (this.dvrVideoOnSeeked) dvrVideo.removeEventListener('seeked', this.dvrVideoOnSeeked);
+        if (this.dvrVideoOnEnded) dvrVideo.removeEventListener('ended', this.dvrVideoOnEnded);
+    }
+
+    /**
      * Jump back to live edge
      */
     jumpToLive() {
@@ -838,6 +940,9 @@ class LiveModeApp {
 
         const dvrVideo = this.elements.dvrPlaybackVideo;
         if (dvrVideo) {
+            // Remove event listeners before cleaning up
+            this.removeDvrVideoEventListeners();
+
             dvrVideo.pause();
             dvrVideo.removeAttribute('src');
             dvrVideo.load();
@@ -856,6 +961,15 @@ class LiveModeApp {
             this.elements.dvrTimeline.value = this.elements.dvrTimeline.max;
         }
         if (this.elements.dvrLiveBtn) this.elements.dvrLiveBtn.classList.add('active');
+
+        // Update current time to show live buffer duration
+        const bufferDuration = this.replayController.getDvrBufferDuration();
+        if (this.elements.dvrCurrentTime) {
+            this.elements.dvrCurrentTime.textContent = this.formatDvrTime(bufferDuration);
+        }
+        if (this.elements.dvrTotalTime) {
+            this.elements.dvrTotalTime.textContent = this.formatDvrTime(bufferDuration);
+        }
 
         document.querySelectorAll('.dvr-speed-btn').forEach(b => b.classList.remove('active'));
         const btn1x = document.querySelector('.dvr-speed-btn[data-speed="1"]');
@@ -916,25 +1030,18 @@ class LiveModeApp {
      * Periodically update the DVR timeline display with accurate time
      */
     startDvrTimelineUpdater() {
+        // Simplified: only update live buffer info
+        // DVR video time updates are now handled by event listeners
         this.dvrUpdateInterval = setInterval(() => {
             const bufferDuration = this.replayController.getDvrBufferDuration();
 
-            if (this.elements.dvrTotalTime) {
+            // Always update total time (shows buffer size in live mode, video duration in DVR mode)
+            if (!this.isDvrMode && this.elements.dvrTotalTime) {
                 this.elements.dvrTotalTime.textContent = this.formatDvrTime(bufferDuration);
             }
 
-            if (this.isDvrMode) {
-                const dvrVideo = this.elements.dvrPlaybackVideo;
-                if (dvrVideo && dvrVideo.duration && isFinite(dvrVideo.duration)) {
-                    if (this.elements.dvrCurrentTime) {
-                        this.elements.dvrCurrentTime.textContent = this.formatDvrTime(dvrVideo.currentTime);
-                    }
-                    if (this.elements.dvrTimeline) {
-                        const pct = (dvrVideo.currentTime / dvrVideo.duration) * 100;
-                        this.elements.dvrTimeline.value = pct;
-                    }
-                }
-            } else {
+            // In live mode, show current = total (at live edge)
+            if (!this.isDvrMode) {
                 if (this.elements.dvrCurrentTime) {
                     this.elements.dvrCurrentTime.textContent = this.formatDvrTime(bufferDuration);
                 }
@@ -942,7 +1049,8 @@ class LiveModeApp {
                     this.elements.dvrTimeline.value = this.elements.dvrTimeline.max;
                 }
             }
-        }, 250); // Update 4x/sec for smooth time display
+            // DVR mode updates are handled by video element's 'timeupdate' event
+        }, 250); // Update 4x/sec
     }
 
     stopDvrTimelineUpdater() {
