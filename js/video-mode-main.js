@@ -11,14 +11,10 @@ class VideoModeApp {
         this.spikeDetector = new SpikeDetector();
         this.waveformVisualizer = null;
         this.replayController = new ReplayController();
-        this.ballTracker = null;
-        this.decisionSystem = new DecisionSystem();
-        this.hotSpotOverlay = null;
         this.videoAnalyzer = null;
 
         // AI Components
         this.aiAudioClassifier = new AIAudioClassifier();
-        this.aiBallTracker = null; // Initialized when canvas is available
         this.aiTrainingPipeline = new AITrainingPipeline();
         this.aiEnabled = false;
 
@@ -49,13 +45,10 @@ class VideoModeApp {
             videoSeeker: document.getElementById('videoSeeker'),
             // Canvases
             waveformCanvas: document.getElementById('waveformCanvas'),
-            hotspotCanvas: document.getElementById('hotspotCanvas'),
-            ballTrackingOverlay: document.getElementById('ballTrackingOverlay'),
             // Settings
             sensitivitySlider: document.getElementById('sensitivitySlider'),
             thresholdSlider: document.getElementById('thresholdSlider'),
             // Buttons
-            analyzeDecisionBtn: document.getElementById('analyzeDecisionBtn'),
             instantReplayBtn: document.getElementById('instantReplayBtn'),
             exportJSONBtn: document.getElementById('exportJSONBtn')
         };
@@ -66,6 +59,12 @@ class VideoModeApp {
         this.setupEventListeners();
 
         console.log('Video Mode initialized');
+
+        // If arriving from live-mode instant replay, auto-load the saved clip
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('from') === 'instant-replay') {
+            this._loadReplayFromIndexedDB();
+        }
     }
 
     setupEventListeners() {
@@ -197,11 +196,6 @@ class VideoModeApp {
             });
         }
 
-        // Decision button
-        if (this.elements.analyzeDecisionBtn) {
-            this.elements.analyzeDecisionBtn.addEventListener('click', () => this.analyzeDecision());
-        }
-
         // Export
         if (this.elements.exportJSONBtn) {
             this.elements.exportJSONBtn.addEventListener('click', () => this.exportAnalysis());
@@ -242,6 +236,105 @@ class VideoModeApp {
         }
     }
 
+    /**
+     * Load a video directly from a Blob (used when arriving from live-mode
+     * instant replay). Mirrors loadVideo() but accepts a Blob instead of File.
+     * @param {Blob} blob
+     */
+    async loadVideoFromBlob(blob) {
+        try {
+            // Show player container FIRST so the video element is in the DOM and
+            // visible — some browsers refuse to fire loadedmetadata on hidden elements
+            this.elements.videoUploadSection.style.display = 'none';
+            this.elements.videoPlayerContainer.style.display = 'block';
+
+            const url = URL.createObjectURL(blob);
+            this.video.src = url;
+            this.video.load(); // explicitly kick off loading
+
+            this.updateStatus('Loading instant replay clip...');
+
+            // Wait for metadata with a guard against already-loaded and errors
+            if (this.video.readyState < 1 /* HAVE_METADATA */) {
+                await new Promise((resolve, reject) => {
+                    const cleanup = () => {
+                        this.video.removeEventListener('loadedmetadata', onMeta);
+                        this.video.removeEventListener('error', onErr);
+                    };
+                    const onMeta = () => { cleanup(); resolve(); };
+                    const onErr = () => { cleanup(); reject(new Error('Video failed to load')); };
+                    this.video.addEventListener('loadedmetadata', onMeta, { once: true });
+                    this.video.addEventListener('error', onErr, { once: true });
+                });
+            }
+
+            await this.initializeComponents();
+
+            this.videoLoaded = true;
+            this.updateStatus('Instant replay loaded — Ready for analysis');
+
+            // Auto-play the clip
+            try {
+                await this.video.play();
+                const icon = document.getElementById('playPauseIcon');
+                if (icon) icon.textContent = '⏸';
+            } catch (e) {
+                // Browser may block autoplay — user can click play manually
+                console.log('Autoplay blocked, click play to start:', e.message);
+            }
+
+            console.log('Instant replay blob loaded:', (blob.size / 1024 / 1024).toFixed(1), 'MB');
+        } catch (error) {
+            console.error('Failed to load replay blob:', error);
+            this.updateStatus('Failed to load replay — please try again');
+        }
+    }
+
+    /**
+     * Read the pending replay Blob from IndexedDB (stored by live-mode) and
+     * load it into the player. Clears the entry after reading so a page
+     * refresh doesn't re-load the same clip.
+     */
+    _loadReplayFromIndexedDB() {
+        const openReq = indexedDB.open('ultraedge-replay', 1);
+
+        openReq.onupgradeneeded = (e) => {
+            // Create the store if this is the first time video-mode opens the DB
+            e.target.result.createObjectStore('clips');
+        };
+
+        openReq.onsuccess = async (e) => {
+            const db = e.target.result;
+            try {
+                const tx = db.transaction('clips', 'readwrite');
+                const store = tx.objectStore('clips');
+                const getReq = store.get('pending');
+
+                getReq.onsuccess = async () => {
+                    const blob = getReq.result;
+                    // Delete immediately so a refresh doesn't reload it
+                    store.delete('pending');
+                    db.close();
+
+                    if (blob) {
+                        await this.loadVideoFromBlob(blob);
+                    } else {
+                        console.warn('Arrived with ?from=instant-replay but no clip found in IndexedDB');
+                    }
+                };
+
+                getReq.onerror = () => db.close();
+            } catch (err) {
+                console.error('IndexedDB read error:', err);
+                db.close();
+            }
+        };
+
+        openReq.onerror = (e) => {
+            console.error('Failed to open IndexedDB:', e);
+        };
+    }
+
     async initializeComponents() {
         // Show loading message
         this.updateStatus('Initializing audio system...');
@@ -254,30 +347,20 @@ class VideoModeApp {
 
         // Initialize visualizers
         this.waveformVisualizer = new WaveformVisualizer(this.elements.waveformCanvas);
-        this.ballTracker = new BallTracker(this.elements.ballTrackingOverlay);
-        this.hotSpotOverlay = new HotSpotOverlay(this.elements.hotspotCanvas);
         this.videoAnalyzer = new VideoAnalyzer(this.video);
 
-        // Initialize AI components
+        // Initialize AI audio classifier
         this.updateStatus('Loading AI models...');
-        this.aiBallTracker = new AIBallTracker(this.elements.ballTrackingOverlay);
-
-        // Try to load AI models (fail gracefully if models not available)
         const audioModelLoaded = await this.aiAudioClassifier.loadModel();
-        const ballModelLoaded = await this.aiBallTracker.loadModel();
 
-        if (audioModelLoaded || ballModelLoaded) {
+        if (audioModelLoaded) {
             this.aiEnabled = true;
             this.updateStatus('AI models loaded successfully');
             console.log('AI Enhancement: ACTIVE');
-
-            // Update AI status displays
             this.updateAIStatusDisplay();
         } else {
             this.updateStatus('AI models not available - using traditional detection');
             console.log('AI Enhancement: DISABLED (models not found)');
-
-            // Update AI status displays
             this.updateAIStatusDisplay();
         }
 
@@ -320,12 +403,6 @@ class VideoModeApp {
         };
 
         this.waveformVisualizer.start();
-        this.hotSpotOverlay.initialize();
-
-        // Start AI ball tracking if enabled
-        if (this.aiEnabled && this.aiBallTracker.isModelLoaded) {
-            this.startAIBallTracking();
-        }
 
         console.log('Components initialized');
     }
@@ -365,11 +442,6 @@ class VideoModeApp {
 
         // Visualize
         this.waveformVisualizer.addSpikeMarker(spike);
-
-        // Simulate hot-spot if enabled
-        if (document.getElementById('hotspotEnabled')?.checked) {
-            this.hotSpotOverlay.simulateHeat('bat');
-        }
     }
 
     addSpikeToList(spike) {
@@ -389,49 +461,6 @@ class VideoModeApp {
         list.insertBefore(item, list.firstChild);
     }
 
-    analyzeDecision() {
-        const latestSpike = this.spikeDetector.getSpikeHistory().slice(-1)[0];
-        const hotspotData = this.hotSpotOverlay.getDetectionData();
-        const ballTrackingData = this.ballTracker ? this.ballTracker.getTrackingData() : null;
-
-        const decision = this.decisionSystem.analyzeDecision({
-            ultraEdge: latestSpike,
-            hotSpot: hotspotData,
-            ballTracking: ballTrackingData
-        });
-
-        // Display decision
-        this.displayDecision(decision);
-    }
-
-    displayDecision(decision) {
-        document.getElementById('ultraEdgeStatus').textContent = decision.breakdown.ultraEdge;
-        document.getElementById('hotspotStatus').textContent = decision.breakdown.hotSpot;
-        document.getElementById('trackingStatus').textContent = decision.breakdown.ballTracking;
-
-        const finalDecision = document.getElementById('finalDecision');
-        finalDecision.textContent = decision.decision;
-        finalDecision.className = 'final-decision';
-
-        if (decision.decision.includes('OUT')) {
-            finalDecision.classList.add('out');
-        } else if (decision.decision === 'NOT OUT') {
-            finalDecision.classList.add('not-out');
-        }
-
-        // Show overlay
-        const overlay = document.getElementById('decisionOverlay');
-        if (overlay) {
-            overlay.style.display = 'flex';
-            document.getElementById('decisionResult').textContent = decision.decision;
-            document.getElementById('decisionConfidence').textContent = `Confidence: ${decision.confidence}%`;
-
-            setTimeout(() => {
-                overlay.style.display = 'none';
-            }, 3000);
-        }
-    }
-
     exportAnalysis() {
         const data = {
             exportTime: new Date().toISOString(),
@@ -439,8 +468,7 @@ class VideoModeApp {
                 duration: this.video.duration,
                 currentTime: this.video.currentTime
             },
-            spikes: this.spikeDetector.exportToJSON(),
-            decision: this.decisionSystem.exportReport()
+            spikes: this.spikeDetector.exportToJSON()
         };
 
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -475,74 +503,24 @@ class VideoModeApp {
     }
 
     /**
-     * Start AI-powered ball tracking
-     */
-    startAIBallTracking() {
-        if (!this.aiBallTracker || !this.aiBallTracker.isModelLoaded) return;
-
-        console.log('Starting AI ball tracking...');
-
-        const trackBall = async () => {
-            if (this.video.paused) {
-                requestAnimationFrame(trackBall);
-                return;
-            }
-
-            // Detect ball in current frame
-            const detections = await this.aiBallTracker.detectBall(this.video);
-
-            // Update tracking state
-            this.aiBallTracker.updateTracking(detections, this.video.currentTime);
-
-            // Render tracking visualization
-            this.aiBallTracker.render(this.video);
-
-            // Continue tracking
-            requestAnimationFrame(trackBall);
-        };
-
-        trackBall();
-    }
-
-    /**
      * Toggle AI enhancement
      */
     toggleAI(enabled) {
         this.aiEnabled = enabled;
-
         if (this.aiAudioClassifier) {
             this.aiAudioClassifier.setEnabled(enabled);
         }
-
-        if (this.aiBallTracker) {
-            this.aiBallTracker.setEnabled(enabled);
-        }
-
         console.log('AI Enhancement:', enabled ? 'ENABLED' : 'DISABLED');
-    }
-
-    /**
-     * Get AI status for display
-     */
-    getAIStatus() {
-        return {
-            enabled: this.aiEnabled,
-            audioClassifier: this.aiAudioClassifier ? this.aiAudioClassifier.getStatus() : null,
-            ballTracker: this.aiBallTracker ? this.aiBallTracker.getStatus() : null,
-            trainingPipeline: this.aiTrainingPipeline ? this.aiTrainingPipeline.getStats() : null
-        };
     }
 
     /**
      * Update AI status display in UI
      */
     updateAIStatusDisplay() {
-        const status = this.getAIStatus();
-
-        // Update audio classifier status
         const audioStatus = document.getElementById('aiAudioStatus');
         if (audioStatus) {
-            if (status.audioClassifier && status.audioClassifier.modelLoaded) {
+            const s = this.aiAudioClassifier ? this.aiAudioClassifier.getStatus() : null;
+            if (s && s.modelLoaded) {
                 audioStatus.textContent = '✓ Ready';
                 audioStatus.style.color = '#00ff41';
             } else {
@@ -551,25 +529,11 @@ class VideoModeApp {
             }
         }
 
-        // Update ball tracker status
-        const ballStatus = document.getElementById('aiBallStatus');
-        if (ballStatus) {
-            if (status.ballTracker && status.ballTracker.modelLoaded) {
-                ballStatus.textContent = '✓ Ready';
-                ballStatus.style.color = '#00ff41';
-            } else {
-                ballStatus.textContent = '✗ Not Available';
-                ballStatus.style.color = '#ff3333';
-            }
-        }
-
-        // Update training sample count
         const trainingCount = document.getElementById('aiTrainingCount');
-        if (trainingCount && status.trainingPipeline) {
-            trainingCount.textContent = status.trainingPipeline.totalSamples || 0;
+        if (trainingCount && this.aiTrainingPipeline) {
+            trainingCount.textContent = this.aiTrainingPipeline.getStats()?.totalSamples || 0;
         }
 
-        // Auto-enable AI if models are loaded
         const aiCheckbox = document.getElementById('aiEnabled');
         if (aiCheckbox && this.aiEnabled) {
             aiCheckbox.checked = true;

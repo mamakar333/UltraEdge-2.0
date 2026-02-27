@@ -12,15 +12,14 @@ class LiveModeApp {
         this.spikeDetector = new SpikeDetector();
         this.waveformVisualizer = null;
         this.replayController = new ReplayController();
-        this.ballTracker = null;
-        this.decisionSystem = new DecisionSystem();
-        this.hotSpotOverlay = null;
         this.liveStreamHandler = new LiveStreamHandler();
-        this.vdoNinjaConnector = new VdoNinjaConnector();
+        this.vdoNinjaConnector = new VdoNinjaConnector(); // iframe mode (legacy)
+        this.vdoNinjaSdkConnector = new VdoNinjaSdkConnector(); // SDK mode (recommended)
 
         // State
         this.isMonitoring = false;
-        this.currentSource = 'none'; // 'none', 'local', 'vdo-ninja'
+        this.currentSource = 'none'; // 'none', 'local', 'vdo-ninja', 'vdo-ninja-sdk'
+        this.vdoNinjaMode = 'sdk'; // 'sdk' or 'iframe'
         this.eventLog = [];
 
         // DVR state
@@ -44,13 +43,10 @@ class LiveModeApp {
             dvrPlaybackVideo: document.getElementById('dvrPlaybackVideo'),
             // Canvases
             liveWaveformCanvas: document.getElementById('liveWaveformCanvas'),
-            liveHotspotCanvas: document.getElementById('liveHotspotCanvas'),
-            ballTrackingViz: document.getElementById('ballTrackingViz'),
             // Controls
             startMonitoringBtn: document.getElementById('startMonitoringBtn'),
             stopMonitoringBtn: document.getElementById('stopMonitoringBtn'),
             instantReplayLiveBtn: document.getElementById('instantReplayLiveBtn'),
-            reviewDecisionBtn: document.getElementById('reviewDecisionBtn'),
             captureFrameBtn: document.getElementById('captureFrameBtn'),
             // Settings
             liveSensitivitySlider: document.getElementById('liveSensitivitySlider'),
@@ -58,17 +54,24 @@ class LiveModeApp {
             bufferSizeSlider: document.getElementById('bufferSizeSlider'),
             autoReplayToggle: document.getElementById('autoReplayToggle'),
             transparentBgLive: document.getElementById('transparentBgLive'),
-            // Toggles
-            hotspotToggle: document.getElementById('hotspotToggle'),
-            ballTrackingToggle: document.getElementById('ballTrackingToggle'),
             // Camera selects
             selectMainCameraBtn: document.getElementById('selectMainCameraBtn'),
             // Source selection modal
             sourceSelectionModal: document.getElementById('sourceSelectionModal'),
             closeSourceModalBtn: document.getElementById('closeSourceModalBtn'),
             selectLocalCameraBtn: document.getElementById('selectLocalCameraBtn'),
+            // VDO.ninja mode toggle
+            sdkModeBtn: document.getElementById('sdkModeBtn'),
+            iframeModeBtn: document.getElementById('iframeModeBtn'),
+            sdkModeContainer: document.getElementById('sdkModeContainer'),
+            iframeModeContainer: document.getElementById('iframeModeContainer'),
+            // VDO.ninja SDK mode elements
+            vdoRoomName: document.getElementById('vdoRoomName'),
+            connectSdkBtn: document.getElementById('connectSdkBtn'),
+            // VDO.ninja iframe mode elements (legacy)
             vdoNinjaUrl: document.getElementById('vdoNinjaUrl'),
             connectVdoBtn: document.getElementById('connectVdoBtn'),
+            // Shared connection status
             connectionDot: document.getElementById('connectionDot'),
             connectionStatusText: document.getElementById('connectionStatusText'),
             // Connection badge in feed header
@@ -252,22 +255,8 @@ class LiveModeApp {
             }
         });
 
-        // Toggles
-        this.elements.hotspotToggle?.addEventListener('change', (e) => {
-            if (this.hotSpotOverlay) {
-                this.hotSpotOverlay.setEnabled(e.target.checked);
-            }
-        });
-
-        this.elements.ballTrackingToggle?.addEventListener('change', (e) => {
-            if (this.ballTracker) {
-                this.ballTracker.setEnabled(e.target.checked);
-            }
-        });
-
         // Replay & Review
         this.elements.instantReplayLiveBtn?.addEventListener('click', () => this.triggerInstantReplay());
-        this.elements.reviewDecisionBtn?.addEventListener('click', () => this.reviewDecision());
 
         // Capture frame
         this.elements.captureFrameBtn?.addEventListener('click', () => this.captureFrame());
@@ -282,18 +271,28 @@ class LiveModeApp {
         // Source selection modal
         this.elements.closeSourceModalBtn?.addEventListener('click', () => this.hideSourceSelectionModal());
         this.elements.selectLocalCameraBtn?.addEventListener('click', () => this.selectLocalCamera());
+
+        // VDO.ninja mode toggle
+        this.elements.sdkModeBtn?.addEventListener('click', () => this.toggleVdoNinjaMode('sdk'));
+        this.elements.iframeModeBtn?.addEventListener('click', () => this.toggleVdoNinjaMode('iframe'));
+
+        // VDO.ninja SDK mode connection
+        this.elements.connectSdkBtn?.addEventListener('click', () => this.connectVdoNinjaSdk());
+        this.elements.vdoRoomName?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.connectVdoNinjaSdk();
+        });
+
+        // VDO.ninja iframe mode connection (legacy)
         this.elements.connectVdoBtn?.addEventListener('click', () => this.connectVdoNinja());
+        this.elements.vdoNinjaUrl?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.connectVdoNinja();
+        });
 
         // Close modal on overlay click
         this.elements.sourceSelectionModal?.addEventListener('click', (e) => {
             if (e.target === this.elements.sourceSelectionModal) {
                 this.hideSourceSelectionModal();
             }
-        });
-
-        // Allow Enter key to connect VDO.ninja
-        this.elements.vdoNinjaUrl?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') this.connectVdoNinja();
         });
 
         // DVR controls
@@ -341,11 +340,6 @@ class LiveModeApp {
 
     initializeVisualizers() {
         this.waveformVisualizer = new WaveformVisualizer(this.elements.liveWaveformCanvas);
-        this.hotSpotOverlay = new HotSpotOverlay(this.elements.liveHotspotCanvas);
-        this.ballTracker = new BallTracker(this.elements.ballTrackingViz);
-
-        this.hotSpotOverlay.initialize();
-
         console.log('Visualizers initialized');
     }
 
@@ -417,6 +411,188 @@ class LiveModeApp {
         }
     }
 
+    /**
+     * Toggle between SDK and iframe mode for VDO.ninja
+     */
+    toggleVdoNinjaMode(mode) {
+        this.vdoNinjaMode = mode;
+
+        if (mode === 'sdk') {
+            // Show SDK mode UI
+            if (this.elements.sdkModeContainer) this.elements.sdkModeContainer.style.display = 'block';
+            if (this.elements.iframeModeContainer) this.elements.iframeModeContainer.style.display = 'none';
+
+            // Update button styles
+            if (this.elements.sdkModeBtn) {
+                this.elements.sdkModeBtn.style.background = '#00ff41';
+                this.elements.sdkModeBtn.style.color = '#000';
+            }
+            if (this.elements.iframeModeBtn) {
+                this.elements.iframeModeBtn.style.background = '';
+                this.elements.iframeModeBtn.style.color = '';
+                this.elements.iframeModeBtn.classList.add('btn-secondary');
+            }
+        } else {
+            // Show iframe mode UI
+            if (this.elements.sdkModeContainer) this.elements.sdkModeContainer.style.display = 'none';
+            if (this.elements.iframeModeContainer) this.elements.iframeModeContainer.style.display = 'block';
+
+            // Update button styles
+            if (this.elements.iframeModeBtn) {
+                this.elements.iframeModeBtn.style.background = '#00ff41';
+                this.elements.iframeModeBtn.style.color = '#000';
+                this.elements.iframeModeBtn.classList.remove('btn-secondary');
+            }
+            if (this.elements.sdkModeBtn) {
+                this.elements.sdkModeBtn.style.background = '';
+                this.elements.sdkModeBtn.style.color = '';
+            }
+        }
+
+        console.log('VDO.ninja mode set to:', mode);
+    }
+
+    /**
+     * Connect to VDO.ninja using SDK mode (direct MediaStream access)
+     */
+    async connectVdoNinjaSdk() {
+        const roomInput = this.elements.vdoRoomName;
+        const roomName = roomInput?.value.trim();
+
+        if (!roomName) {
+            alert('Please enter a room name');
+            return;
+        }
+
+        try {
+            // Update modal status to connecting
+            if (this.elements.connectionDot) {
+                this.elements.connectionDot.className = 'connection-dot connecting';
+            }
+            if (this.elements.connectionStatusText) {
+                this.elements.connectionStatusText.textContent = 'Connecting to room...';
+            }
+
+            // Stop local camera if active
+            if (this.currentSource === 'local') {
+                this.liveStreamHandler.stopCamera();
+            }
+
+            // Show the main video feed (we'll use it for SDK video)
+            // Keep muted=true so the browser's autoplay policy allows the video
+            // to play immediately. Audio is handled via AudioContext which does
+            // not require the video element to be unmuted.
+            this.elements.mainCameraFeed.style.display = 'block';
+            console.log('✅ Main video feed prepared for SDK:', this.elements.mainCameraFeed.id);
+            console.log('   Display:', this.elements.mainCameraFeed.style.display);
+            console.log('   Dimensions:', this.elements.mainCameraFeed.offsetWidth, 'x', this.elements.mainCameraFeed.offsetHeight);
+
+            // Initialize SDK if not already done
+            await this.vdoNinjaSdkConnector.init();
+
+            // Setup callbacks
+            this.vdoNinjaSdkConnector.onConnectionChange = (connected, info) => {
+                if (connected) {
+                    if (this.elements.connectionDot) {
+                        this.elements.connectionDot.className = 'connection-dot connected';
+                    }
+                    if (this.elements.connectionStatusText) {
+                        this.elements.connectionStatusText.textContent = `Connected to room: ${info.room}`;
+                    }
+                    this.logEvent(`Connected to VDO.ninja room: ${info.room}`, 'system');
+                } else {
+                    if (this.elements.connectionDot) {
+                        this.elements.connectionDot.className = 'connection-dot';
+                    }
+                    if (this.elements.connectionStatusText) {
+                        this.elements.connectionStatusText.textContent = 'Disconnected';
+                    }
+                }
+            };
+
+            this.vdoNinjaSdkConnector.onStreamReceived = (stream) => {
+                console.log('MediaStream received from VDO.ninja SDK:', stream);
+                this.logEvent('VDO.ninja stream received (audio + video)', 'system');
+
+                // Update UI
+                if (this.elements.mainCameraConnectionBadge) {
+                    this.elements.mainCameraConnectionBadge.style.display = 'inline-block';
+                }
+                if (this.elements.mainCameraConnectionText) {
+                    this.elements.mainCameraConnectionText.textContent = `VDO.ninja SDK (${roomName})`;
+                }
+
+                // If monitoring is active, use this stream
+                if (this.isMonitoring) {
+                    this.useSdkStream(stream);
+                }
+            };
+
+            this.vdoNinjaSdkConnector.onError = (error) => {
+                console.error('VDO.ninja SDK error:', error);
+                this.logEvent('VDO.ninja SDK error: ' + error.message, 'error');
+                alert('Failed to connect: ' + error.message);
+            };
+
+            // Use the existing mainCameraFeed video element for SDK playback
+            const videoElement = this.elements.mainCameraFeed;
+            console.log('🔗 Connecting SDK with video element:', videoElement.id);
+            console.log('   Video element tag:', videoElement.tagName);
+
+            // Connect to the room (pass video element instead of container)
+            const connected = await this.vdoNinjaSdkConnector.connect(roomName, null, videoElement);
+
+            if (connected) {
+                this.currentSource = 'vdo-ninja-sdk';
+                this.updateSourceUI('vdo-ninja-sdk');
+                this.hideSourceSelectionModal();
+                this.logEvent(`Joining VDO.ninja room: ${roomName}. Waiting for phone to push...`, 'system');
+                console.log('SDK connected. Waiting for remote peer to send tracks...');
+            } else {
+                throw new Error('Failed to connect to VDO.ninja room');
+            }
+        } catch (error) {
+            console.error('Failed to connect VDO.ninja SDK:', error);
+            this.logEvent('Failed to connect VDO.ninja SDK: ' + error.message, 'error');
+            alert('Failed to connect: ' + error.message);
+
+            if (this.elements.connectionDot) {
+                this.elements.connectionDot.className = 'connection-dot';
+            }
+            if (this.elements.connectionStatusText) {
+                this.elements.connectionStatusText.textContent = 'Connection failed';
+            }
+        }
+    }
+
+    /**
+     * Use the MediaStream from SDK for audio analysis and video recording
+     */
+    async useSdkStream(stream) {
+        console.log('Using SDK MediaStream for audio analysis and DVR recording');
+
+        try {
+            // Audio tracks → AudioProcessor for waveform/spike analysis
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length > 0) {
+                const audioOnlyStream = new MediaStream(audioTracks);
+                await this.audioProcessor.initializeFromStream(audioOnlyStream);
+                this.logEvent('Audio analysis started from VDO.ninja SDK stream', 'system');
+            }
+
+            // Full stream (video+audio) → ReplayController for DVR recording
+            this.replayController.startRecordingFromStream(stream);
+            this.logEvent('DVR recording started from VDO.ninja SDK stream', 'system');
+
+        } catch (error) {
+            console.error('Failed to use SDK stream:', error);
+            this.logEvent('Failed to use SDK stream: ' + error.message, 'error');
+        }
+    }
+
+    /**
+     * Connect to VDO.ninja using iframe mode (legacy, requires tab capture)
+     */
     async connectVdoNinja() {
         const urlInput = this.elements.vdoNinjaUrl;
         const url = urlInput?.value.trim();
@@ -508,12 +684,19 @@ class LiveModeApp {
         const activeCameras = document.getElementById('activeCameras');
         const liveIndicator = document.getElementById('liveIndicator');
 
-        if (sourceType === 'vdo-ninja') {
+        if (sourceType === 'vdo-ninja-sdk') {
             if (badge) {
                 badge.style.display = 'inline-flex';
                 badge.classList.add('vdo-connected');
             }
-            if (badgeText) badgeText.textContent = 'VDO.ninja';
+            if (badgeText) badgeText.textContent = 'VDO.ninja SDK';
+            if (liveIndicator) liveIndicator.style.display = 'flex';
+        } else if (sourceType === 'vdo-ninja') {
+            if (badge) {
+                badge.style.display = 'inline-flex';
+                badge.classList.add('vdo-connected');
+            }
+            if (badgeText) badgeText.textContent = 'VDO.ninja (iframe)';
             if (liveIndicator) liveIndicator.style.display = 'flex';
         } else if (sourceType === 'local') {
             if (badge) {
@@ -536,6 +719,120 @@ class LiveModeApp {
     // =========================================================================
     // Monitoring
     // =========================================================================
+
+    /**
+     * Get the VDO.ninja MediaStream for recording without using screen capture.
+     *
+     * Strategy:
+     *  1. If the SDK connector already has a stream (e.g. user also clicked
+     *     "Connect via SDK"), return it immediately.
+     *  2. Otherwise, parse the VDO.ninja iframe URL to extract the room/stream
+     *     ID, auto-initialise the SDK connector, connect it to the same room,
+     *     and wait up to 10 s for the WebRTC stream to arrive.
+     *
+     * @returns {Promise<MediaStream|null>}
+     */
+    async _getVdoNinjaStreamForRecording() {
+        // 1. Reuse existing SDK stream if already connected
+        const existing = this.vdoNinjaSdkConnector.getMediaStream();
+        if (existing && existing.getTracks().length > 0) {
+            this.logEvent('Reusing existing VDO.ninja SDK stream for recording', 'system');
+            return existing;
+        }
+
+        // 2. Parse the iframe URL to find the room / stream ID
+        const iframe = this.vdoNinjaConnector.getIframe();
+        if (!iframe || !iframe.src) {
+            this.logEvent('No VDO.ninja iframe found — cannot auto-connect SDK', 'system');
+            return null;
+        }
+
+        const roomInfo = this._parseVdoNinjaUrl(iframe.src);
+        if (!roomInfo) {
+            this.logEvent('Could not parse room/stream ID from VDO.ninja URL: ' + iframe.src, 'system');
+            return null;
+        }
+
+        this.logEvent(`Auto-connecting SDK to VDO.ninja (id: "${roomInfo.id}")...`, 'system');
+
+        try {
+            // Initialise SDK only if it hasn't been already
+            if (!this.vdoNinjaSdkConnector.vdo) {
+                await this.vdoNinjaSdkConnector.init();
+            }
+
+            // Connect without a video element — the iframe already handles display.
+            // Passing null means no video element is created/modified.
+            await this.vdoNinjaSdkConnector.connect(roomInfo.id, roomInfo.password, null);
+
+            // Wait for the WebRTC track(s) to arrive
+            const stream = await this._waitForSdkStream(10000);
+            if (stream) {
+                this.logEvent('✓ VDO.ninja SDK stream received for recording', 'system');
+            } else {
+                this.logEvent('SDK stream timed out — no tracks received within 10 s', 'system');
+            }
+            return stream;
+
+        } catch (err) {
+            this.logEvent('SDK auto-connect error: ' + err.message, 'error');
+            return null;
+        }
+    }
+
+    /**
+     * Parse a VDO.ninja URL and return the room/stream identifier.
+     * Handles ?view=STREAMID, ?room=ROOMNAME, and ?push=STREAMID formats.
+     * @param {string} url
+     * @returns {{ id: string, password: string|null }|null}
+     */
+    _parseVdoNinjaUrl(url) {
+        try {
+            const u = new URL(url);
+            const p = u.searchParams;
+            // view= and room= are the common viewer-side params; push= as fallback
+            const id = p.get('view') || p.get('room') || p.get('push');
+            const password = p.get('password') || p.get('pw') || null;
+            return id ? { id, password } : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
+     * Return a promise that resolves with the first MediaStream delivered by
+     * the VDO.ninja SDK connector, or null after timeoutMs.
+     * @param {number} timeoutMs
+     * @returns {Promise<MediaStream|null>}
+     */
+    _waitForSdkStream(timeoutMs = 10000) {
+        return new Promise((resolve) => {
+            // Check immediately — stream may have arrived already
+            const existing = this.vdoNinjaSdkConnector.getMediaStream();
+            if (existing && existing.getTracks().length > 0) {
+                resolve(existing);
+                return;
+            }
+
+            let settled = false;
+
+            const timer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                this.vdoNinjaSdkConnector.onStreamReceived = null;
+                resolve(null);
+            }, timeoutMs);
+
+            // Temporarily override the callback to catch the incoming stream
+            this.vdoNinjaSdkConnector.onStreamReceived = (stream) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                this.vdoNinjaSdkConnector.onStreamReceived = null;
+                resolve(stream);
+            };
+        });
+    }
 
     /**
      * Capture tab audio (for VDO.ninja stream audio)
@@ -619,23 +916,39 @@ class LiveModeApp {
 
             let audioInitialized = false;
 
-            if (this.currentSource === 'vdo-ninja') {
-                this.updateStatus('Requesting tab capture...', 'active');
-                this.logEvent('Capturing tab for audio analysis + DVR recording...', 'system');
+            if (this.currentSource === 'vdo-ninja-sdk') {
+                // SDK mode: use the MediaStream directly (no tab capture!)
+                this.updateStatus('Using VDO.ninja SDK stream...', 'active');
+                const sdkStream = this.vdoNinjaSdkConnector.getMediaStream();
 
-                const tabStream = await this.captureTab();
+                if (sdkStream && sdkStream.getAudioTracks().length > 0) {
+                    await this.useSdkStream(sdkStream);
+                    audioInitialized = true;
+                    this.logEvent('✓ Audio analysis active from SDK stream (no tab capture!)', 'system');
+                } else {
+                    alert('VDO.ninja SDK stream not ready.\n\nMake sure your phone is pushing to the same room name!');
+                    this.updateStatus('SDK stream not ready', 'error');
+                    return;
+                }
+            } else if (this.currentSource === 'vdo-ninja') {
+                // iframe mode: use SDK to get the actual VDO.ninja WebRTC stream
+                // (avoids getDisplayMedia / screen recording entirely)
+                this.updateStatus('Connecting to VDO.ninja stream...', 'active');
+                this.logEvent('Getting VDO.ninja stream via SDK (no screen recording)...', 'system');
 
-                if (tabStream && tabStream.getAudioTracks().length > 0) {
+                const vdoStream = await this._getVdoNinjaStreamForRecording();
+
+                if (vdoStream && vdoStream.getAudioTracks().length > 0) {
                     // Audio tracks → AudioProcessor for waveform/spike analysis
-                    const audioOnlyStream = new MediaStream(tabStream.getAudioTracks());
+                    const audioOnlyStream = new MediaStream(vdoStream.getAudioTracks());
                     audioInitialized = await this.audioProcessor.initializeFromStream(audioOnlyStream);
 
                     // Full stream (video+audio) → ReplayController for DVR recording
-                    this.replayController.startRecordingFromStream(tabStream);
-                    this.logEvent('✓ Audio analysis active + DVR recording started', 'system');
+                    this.replayController.startRecordingFromStream(vdoStream);
+                    this.logEvent('✓ VDO.ninja stream captured directly (no screen recording)', 'system');
                 } else {
-                    alert('Failed to capture tab audio.\n\nPlease:\n1. Select "Current Tab"\n2. Check "Share audio"\n3. Click "Share"');
-                    this.updateStatus('Tab capture failed', 'error');
+                    alert('Could not get VDO.ninja stream.\n\nMake sure:\n• Your phone/camera is pushing to the same VDO.ninja URL or room\n• The stream is active before clicking Start Monitoring\n• Try using "VDO.ninja SDK" mode for more reliable stream access');
+                    this.updateStatus('VDO.ninja stream unavailable', 'error');
                     return;
                 }
             } else if (this.currentSource === 'local') {
@@ -977,13 +1290,22 @@ class LiveModeApp {
     }
 
     /**
-     * Toggle visibility of the live feed (iframe or local video)
+     * Toggle visibility of the live feed (iframe, SDK video, or local video)
      */
     toggleLiveFeedVisibility(show) {
-        if (this.currentSource === 'vdo-ninja') {
+        if (this.currentSource === 'vdo-ninja-sdk') {
+            // SDK mode: toggle the SDK video element
+            const sdkVideo = this.vdoNinjaSdkConnector.getVideoElement();
+            if (sdkVideo) {
+                sdkVideo.style.display = show ? 'block' : 'none';
+                console.log('SDK video visibility:', show);
+            }
+        } else if (this.currentSource === 'vdo-ninja') {
+            // iframe mode: toggle the iframe
             const iframe = this.vdoNinjaConnector.getIframe();
             if (iframe) iframe.style.display = show ? 'block' : 'none';
         } else {
+            // Local camera: toggle the main video element
             this.elements.mainCameraFeed.style.display = show ? 'block' : 'none';
         }
     }
@@ -1122,28 +1444,9 @@ class LiveModeApp {
             impactZoneDisplay.querySelector('span').textContent = zone;
         }
 
-        // Update Ultra Edge indicator in decision panel
-        document.getElementById('liveUltraEdge').textContent = 'DETECTED';
-        document.getElementById('liveUltraEdge').style.color = '#ff3333';
-
         // Auto replay if enabled
         if (this.elements.autoReplayToggle?.checked) {
             setTimeout(() => this.triggerInstantReplay(), 500);
-        }
-
-        // Simulate hot-spot if enabled
-        if (this.elements.hotspotToggle?.checked) {
-            this.hotSpotOverlay.simulateHeat('bat');
-            this.hotSpotOverlay.render();
-            document.getElementById('liveHotspot').textContent = 'CONTACT';
-            document.getElementById('liveHotspot').style.color = '#ff3333';
-        }
-
-        // Simulate ball tracking if enabled
-        if (this.elements.ballTrackingToggle?.checked && !this.ballTracker.simulationActive) {
-            this.ballTracker.startSimulation();
-            document.getElementById('liveBallTrack').textContent = 'IMPACT';
-            document.getElementById('liveBallTrack').style.color = '#ffaa00';
         }
     }
 
@@ -1152,115 +1455,95 @@ class LiveModeApp {
     // =========================================================================
 
     async triggerInstantReplay() {
+        const btn = document.getElementById('instantReplayLiveBtn');
+        const originalBtnText = btn ? btn.textContent : '';
+
         try {
-            const replayOverlay = document.getElementById('replayOverlay');
-            const replayVideo = document.getElementById('replayVideo');
-            const replayHeader = replayOverlay?.querySelector('.replay-header h2');
+            this.logEvent('Preparing 30s instant replay clip...', 'system');
 
-            if (!replayOverlay || !replayVideo) {
-                this.logEvent('Replay overlay not found in HTML', 'error');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'SAVING CLIP...';
+            }
+
+            // Get the last 30 seconds as a WebM blob
+            const clip = this.replayController.getClipBlob(30);
+
+            if (!clip) {
+                this.logEvent('No replay data available yet — keep monitoring active', 'system');
+                if (btn) {
+                    btn.textContent = 'NO DATA YET';
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.textContent = originalBtnText;
+                    }, 2000);
+                }
                 return;
             }
 
-            // Show overlay immediately with loading state
-            replayOverlay.style.display = 'flex';
-            replayVideo.style.display = 'none';
-            if (replayHeader) replayHeader.textContent = 'LOADING REPLAY...';
+            this.logEvent(`Clip ready (${(clip.size / 1024 / 1024).toFixed(1)} MB) — saving...`, 'system');
 
-            // Show a spinner in the video area
-            let spinner = replayOverlay.querySelector('.replay-spinner');
-            if (!spinner) {
-                spinner = document.createElement('div');
-                spinner.className = 'replay-spinner';
-                spinner.innerHTML = '<div class="spinner"></div><p>Preparing last 2 minutes...</p>';
-                replayVideo.parentElement.appendChild(spinner);
+            // 1. Trigger browser download so the user has the file locally
+            const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const filename = `ultra-edge-replay-${ts}.webm`;
+            const downloadUrl = URL.createObjectURL(clip);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
+
+            // 2. Store blob in IndexedDB so video-mode.html can pick it up
+            await this._saveReplayToIndexedDB(clip);
+
+            // 3. Open video-mode in a NEW TAB so live monitoring keeps running
+            window.open('video-mode.html?from=instant-replay', '_blank');
+            this.logEvent('Clip saved & opened in new tab for analysis. Live mode continues.', 'system');
+
+            // Restore button so another replay can be triggered
+            if (btn) {
+                btn.textContent = 'CLIP SAVED ✓';
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.textContent = originalBtnText;
+                }, 2500);
             }
-            spinner.style.display = 'flex';
-
-            this.logEvent('Preparing instant replay...', 'system');
-
-            // Get the replay blob (last 2 min from the DVR buffer)
-            const replay = await this.replayController.getInstantReplay(120);
-
-            spinner.style.display = 'none';
-
-            if (!replay) {
-                if (replayHeader) replayHeader.textContent = 'NO DATA AVAILABLE';
-                setTimeout(() => { replayOverlay.style.display = 'none'; }, 1500);
-                this.logEvent('No replay data available', 'system');
-                return;
-            }
-
-            // Show the video
-            if (replayHeader) replayHeader.textContent = 'INSTANT REPLAY';
-            const replayUrl = URL.createObjectURL(replay);
-            replayVideo.src = replayUrl;
-            replayVideo.style.display = 'block';
-            replayVideo.playbackRate = 1;
-            replayVideo.play();
-
-            this.logEvent('Instant replay playing (' +
-                (replay.size / 1024 / 1024).toFixed(1) + ' MB)', 'system');
-
-            // Close button
-            const closeBtn = document.getElementById('closeReplayBtn');
-            const closeHandler = () => {
-                replayOverlay.style.display = 'none';
-                replayVideo.pause();
-                URL.revokeObjectURL(replayUrl);
-            };
-            closeBtn?.removeEventListener('click', closeHandler);
-            closeBtn?.addEventListener('click', closeHandler, { once: true });
-
-            // Slow motion button
-            const slowBtn = document.getElementById('playSlowMotionBtn');
-            const slowHandler = () => {
-                replayVideo.playbackRate = 0.25;
-                replayVideo.play();
-            };
-            slowBtn?.removeEventListener('click', slowHandler);
-            slowBtn?.addEventListener('click', slowHandler);
 
         } catch (error) {
             console.error('Failed to create replay:', error);
             this.logEvent('Failed to create instant replay: ' + error.message, 'error');
-            const replayOverlay = document.getElementById('replayOverlay');
-            if (replayOverlay) replayOverlay.style.display = 'none';
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalBtnText;
+            }
         }
     }
 
-    reviewDecision() {
-        const latestSpike = this.spikeDetector.getSpikeHistory().slice(-1)[0];
-        const hotspotData = this.hotSpotOverlay.getDetectionData();
-        const ballTrackingData = this.ballTracker ? this.ballTracker.getTrackingData() : null;
-
-        const decision = this.decisionSystem.analyzeDecision({
-            ultraEdge: latestSpike,
-            hotSpot: hotspotData,
-            ballTracking: ballTrackingData
+    /**
+     * Save a replay Blob into IndexedDB so video-mode.html can retrieve it
+     * after page navigation.
+     * @param {Blob} blob
+     * @returns {Promise<void>}
+     */
+    _saveReplayToIndexedDB(blob) {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open('ultraedge-replay', 1);
+            req.onupgradeneeded = (e) => {
+                e.target.result.createObjectStore('clips');
+            };
+            req.onsuccess = (e) => {
+                const db = e.target.result;
+                const tx = db.transaction('clips', 'readwrite');
+                tx.objectStore('clips').put(blob, 'pending');
+                tx.oncomplete = () => { db.close(); resolve(); };
+                tx.onerror = (err) => { db.close(); reject(err); };
+            };
+            req.onerror = reject;
         });
-
-        // Update decision panel
-        document.getElementById('liveUltraEdge').textContent = decision.breakdown.ultraEdge;
-        document.getElementById('liveHotspot').textContent = decision.breakdown.hotSpot;
-        document.getElementById('liveBallTrack').textContent = decision.breakdown.ballTracking;
-
-        const decisionStatus = document.querySelector('#liveDecisionDisplay .decision-status');
-        if (decisionStatus) {
-            decisionStatus.textContent = decision.decision;
-            decisionStatus.style.color = this.decisionSystem.getDecisionColor();
-        }
-
-        // Update confidence bar
-        const confidenceFill = document.getElementById('confidenceFill');
-        const confidenceText = document.getElementById('confidenceText');
-        if (confidenceFill && confidenceText) {
-            confidenceFill.style.width = `${decision.confidence}%`;
-            confidenceText.textContent = `${decision.confidence}%`;
-        }
-
-        this.logEvent(`Decision: ${decision.decision} (${decision.confidence}%)`, 'decision');
     }
+
 
     captureFrame() {
         try {

@@ -847,7 +847,7 @@ body.transparent {
 .content-grid-live {
     display: grid;
     grid-template-columns: 3fr 1fr;
-    grid-template-rows: 2fr 1fr 1fr;
+    grid-template-rows: 2fr auto;
     gap: 15px;
     padding: 15px;
     flex: 1;
@@ -1096,7 +1096,7 @@ body.transparent {
 
 .control-section {
     grid-column: 1 / 2;
-    grid-row: 3 / 4;
+    grid-row: 2 / 3;
     display: grid;
     grid-template-columns: 2fr 1fr;
     gap: 15px;
@@ -1134,7 +1134,7 @@ body.transparent {
 
 .right-sidebar {
     grid-column: 2 / 3;
-    grid-row: 1 / 4;
+    grid-row: 1 / 3;
     display: flex;
     flex-direction: column;
     gap: 15px;

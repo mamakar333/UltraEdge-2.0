@@ -6,8 +6,8 @@
 
 class SpikeDetector {
     constructor() {
-        // Detection parameters
-        this.threshold = 0.2; // Base amplitude threshold (0-1) - lowered for filtered signals
+        // Detection parameters - STRICT for bat-ball only
+        this.threshold = 0.35; // Higher threshold (was 0.2) - only strong impacts trigger
         this.sensitivity = 50; // Sensitivity percentage (1-100)
 
         // Detection state
@@ -17,22 +17,22 @@ class SpikeDetector {
 
         // Temporal filtering (prevents multiple detections of same spike)
         this.lastSpikeTime = 0;
-        this.minTimeBetweenSpikes = 0.05; // 50ms minimum gap - bat-ball impacts can be very quick
+        this.minTimeBetweenSpikes = 0.1; // 100ms minimum gap (was 50ms) - prevents voice syllables
 
         // Signal analysis buffers
         this.previousRMS = 0;
         this.rmsHistory = [];
         this.rmsHistorySize = 10;
 
-        // Advanced detection parameters
-        // Note: With band-pass filtering, these parameters work on pre-filtered audio
-        this.rateOfChangeThreshold = 1.5; // Reduced threshold for sharper transient detection
-        this.frequencyRangeLow = 2000;  // Hz - Bat-ball impacts start around 2 kHz
-        this.frequencyRangeHigh = 8000; // Hz - Bat-ball impacts up to 8 kHz
+        // Advanced detection parameters - STRICTER
+        // These work on the heavily filtered audio (3-7 kHz band-pass)
+        this.rateOfChangeThreshold = 2.5; // Much higher (was 1.5) - only sharp transients
+        this.frequencyRangeLow = 3000;  // Hz - Match band-pass filter (3-7 kHz)
+        this.frequencyRangeHigh = 7000; // Hz - Match band-pass filter
 
-        // Bat-ball specific detection
-        this.transientDetectionEnabled = true; // Focus on sharp, percussive sounds
-        this.minTransientRiseTime = 0.01; // 10ms - bat-ball impacts have very fast attack
+        // Bat-ball specific detection - AGGRESSIVE
+        this.transientDetectionEnabled = true;
+        this.minTransientRiseTime = 0.005; // 5ms (was 10ms) - bat-ball is VERY fast
 
         // Callbacks
         this.onSpikeDetected = null;

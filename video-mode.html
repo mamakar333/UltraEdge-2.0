@@ -47,25 +47,11 @@
                     <div class="video-wrapper">
                         <video id="mainVideo" class="main-video" controls></video>
 
-                        <!-- Overlay Canvases -->
-                        <canvas id="ballTrackingOverlay" class="overlay-canvas"></canvas>
-                        <canvas id="hotspotOverlay" class="overlay-canvas"></canvas>
-
                         <!-- Frame Counter -->
                         <div class="frame-counter">
                             Frame: <span id="frameNumber">0</span> / <span id="totalFrames">0</span>
                         </div>
 
-                        <!-- Decision Overlay -->
-                        <div class="decision-overlay" id="decisionOverlay" style="display: none;">
-                            <div class="decision-panel">
-                                <div class="decision-title">DECISION REVIEW</div>
-                                <div class="decision-result" id="decisionResult">ANALYZING...</div>
-                                <div class="decision-confidence">
-                                    Confidence: <span id="decisionConfidence">0</span>%
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- Video Controls -->
@@ -128,32 +114,6 @@
                     </div>
                 </div>
 
-                <!-- Hot-Spot Display -->
-                <div class="hotspot-section">
-                    <div class="section-header">
-                        <h3>HOT-SPOT THERMAL IMAGING</h3>
-                        <label>
-                            <input type="checkbox" id="hotspotEnabled"> Enable Hot-Spot
-                        </label>
-                    </div>
-                    <div class="hotspot-display">
-                        <canvas id="hotspotCanvas"></canvas>
-                        <div class="hotspot-legend">
-                            <div class="legend-item">
-                                <span class="legend-color" style="background: #0000ff;"></span> Cold
-                            </div>
-                            <div class="legend-item">
-                                <span class="legend-color" style="background: #00ff00;"></span> Warm
-                            </div>
-                            <div class="legend-item">
-                                <span class="legend-color" style="background: #ffff00;"></span> Hot
-                            </div>
-                            <div class="legend-item">
-                                <span class="legend-color" style="background: #ff0000;"></span> Very Hot
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- Right Panel: Controls & Analysis -->
@@ -169,7 +129,6 @@
                     </div>
                     <div class="status-group" style="font-size: 11px; margin-top: 10px;">
                         <div style="color: #888;">Audio Classifier: <span id="aiAudioStatus">Loading...</span></div>
-                        <div style="color: #888;">Ball Tracker: <span id="aiBallStatus">Loading...</span></div>
                         <div style="color: #888;">Training Samples: <span id="aiTrainingCount">0</span></div>
                     </div>
                     <div class="control-group" style="margin-top: 10px;">
@@ -197,58 +156,6 @@
                     </div>
                 </div>
 
-                <!-- Ball Tracking -->
-                <div class="panel-section">
-                    <h3>BALL TRACKING</h3>
-                    <div class="control-group">
-                        <label>
-                            <input type="checkbox" id="ballTrackingEnabled"> Enable Ball Tracking
-                        </label>
-                    </div>
-                    <div id="ballTrackingData" class="data-display">
-                        <div class="data-row">
-                            <span class="data-label">Ball Speed:</span>
-                            <span class="data-value" id="ballSpeed">-</span>
-                        </div>
-                        <div class="data-row">
-                            <span class="data-label">Impact Angle:</span>
-                            <span class="data-value" id="impactAngle">-</span>
-                        </div>
-                        <div class="data-row">
-                            <span class="data-label">Impact Point:</span>
-                            <span class="data-value" id="impactPoint">-</span>
-                        </div>
-                        <div class="data-row">
-                            <span class="data-label">Trajectory:</span>
-                            <span class="data-value" id="trajectory">-</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Decision System -->
-                <div class="panel-section">
-                    <h3>DECISION SYSTEM</h3>
-                    <button class="btn btn-primary btn-block" id="analyzeDecisionBtn">
-                        ANALYZE DECISION
-                    </button>
-                    <div id="decisionAnalysis" class="decision-analysis">
-                        <div class="analysis-item">
-                            <span class="analysis-label">Ultra Edge:</span>
-                            <span class="analysis-status" id="ultraEdgeStatus">-</span>
-                        </div>
-                        <div class="analysis-item">
-                            <span class="analysis-label">Hot-Spot:</span>
-                            <span class="analysis-status" id="hotspotStatus">-</span>
-                        </div>
-                        <div class="analysis-item">
-                            <span class="analysis-label">Ball Tracking:</span>
-                            <span class="analysis-status" id="trackingStatus">-</span>
-                        </div>
-                        <div class="final-decision" id="finalDecision">
-                            NO DECISION
-                        </div>
-                    </div>
-                </div>
 
                 <!-- Spike List -->
                 <div class="panel-section">
@@ -317,11 +224,8 @@
     <script src="js/audio-processor.js"></script>
     <script src="js/spike-detector.js"></script>
     <script src="js/waveform-visualizer.js"></script>
-    <script src="js/video-sync.js"></script>
+    <script src="js/video-sync.js?v=20260222a"></script>
     <script src="js/replay-controller.js"></script>
-    <script src="js/ball-tracker.js"></script>
-    <script src="js/decision-system.js"></script>
-    <script src="js/hotspot-overlay.js"></script>
     <script src="js/video-analyzer.js"></script>
 
     <!-- TensorFlow.js for AI models -->
@@ -329,9 +233,8 @@
 
     <!-- AI Enhancement Modules -->
     <script src="js/ai-audio-classifier.js"></script>
-    <script src="js/ai-ball-tracker.js"></script>
     <script src="js/ai-training-pipeline.js"></script>
 
-    <script src="js/video-mode-main.js"></script>
+    <script src="js/video-mode-main.js?v=20260222b"></script>
 </body>
 </html>

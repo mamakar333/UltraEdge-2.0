@@ -359,6 +359,29 @@ class ReplayController {
     }
 
     /**
+     * Get the last N seconds of recorded video as a valid WebM blob.
+     * Always includes the first chunk (WebM init/header segment) so the
+     * resulting blob is decodable, then appends media chunks from the
+     * requested time window.
+     * @param {number} durationSeconds - How many seconds to capture (default 30)
+     * @returns {Blob|null}
+     */
+    getClipBlob(durationSeconds = 30) {
+        if (this.recordedChunks.length === 0) return null;
+        const cutoff = Date.now() - (durationSeconds * 1000);
+        const recentChunks = this.recordedChunks.filter(c => c.timestamp >= cutoff);
+        // Always include the first chunk — it carries the WebM init segment
+        const initChunk = this.recordedChunks[0];
+        const parts = [initChunk.data || initChunk];
+        for (const c of recentChunks) {
+            // Avoid duplicating the init chunk if it also falls in the window
+            if (c !== initChunk) parts.push(c.data || c);
+        }
+        const mimeType = this.isAudioOnly ? 'audio/webm' : 'video/webm';
+        return new Blob(parts, { type: mimeType });
+    }
+
+    /**
      * Get the full DVR buffer as a single Blob for scrubbing playback
      * @returns {Blob|null} The full buffer blob or null
      */

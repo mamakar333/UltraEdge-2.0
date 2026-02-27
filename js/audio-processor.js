@@ -15,9 +15,12 @@ class AudioProcessor {
 
         // Multi-stage filter chain for bat-ball isolation
         this.highPassFilter = null;   // Stage 1: Remove low-freq crowd rumble
-        this.bandPassFilter = null;   // Stage 2: Focus on bat-ball freq range
-        this.notchFilter = null;      // Stage 3: Notch out voice fundamentals
-        this.compressor = null;       // Stage 4: Noise gate / dynamic compression
+        this.notchFilter = null;      // Stage 2: Notch out voice fundamentals
+        this.notchFilter2 = null;     // Stage 3: Notch upper voice harmonics (1 kHz)
+        this.notchFilter3 = null;     // Stage 4: Notch upper voice harmonics (2 kHz)
+        this.bandPassFilter = null;   // Stage 5: Focus on bat-ball freq range
+        this.workletNode = null;      // Stage 6: Dual-follower transient gate (voice suppressor)
+        this.compressor = null;       // Stage 7: Noise gate / dynamic compression
 
         // Audio analysis buffers
         this.bufferLength = 0;
@@ -72,7 +75,7 @@ class AudioProcessor {
             this.analyser.smoothingTimeConstant = this.smoothingTimeConstant;
 
             if (this.batBallFilterEnabled) {
-                this.buildFilterChain();
+                await this.buildFilterChain();
             } else {
                 this.microphone.connect(this.analyser);
             }
@@ -120,7 +123,7 @@ class AudioProcessor {
             this.analyser.smoothingTimeConstant = this.smoothingTimeConstant;
 
             if (this.batBallFilterEnabled) {
-                this.buildFilterChain();
+                await this.buildFilterChain();
             } else {
                 this.microphone.connect(this.analyser);
             }
@@ -142,55 +145,98 @@ class AudioProcessor {
     /**
      * Build multi-stage filter chain for bat-ball sound isolation.
      *
-     * Chain: source → highPass(1500Hz) → notch(300Hz) → bandPass(2-8kHz) → compressor → analyser
+     * Chain: source → highPass(3kHz) → notch(800Hz) → notch(1kHz) → notch(2kHz)
+     *              → bandPass(5kHz) → VoiceSuppressorWorklet → compressor → analyser
      *
-     * Stage 1 — High-pass (1500 Hz): Removes crowd rumble, bass, and low-freq noise
-     * Stage 2 — Notch (300 Hz): Cuts voice fundamental frequencies
-     * Stage 3 — Band-pass (2-8 kHz): Isolates the "crack" range of bat-ball impact
-     * Stage 4 — Compressor: Acts as noise gate, suppressing quiet background sounds
+     * Stage 1 — High-pass (3000 Hz): Removes crowd rumble, bass, and all voice fundamentals
+     * Stage 2-4 — Notch filters (800 Hz, 1 kHz, 2 kHz): Cuts voice harmonics that leak through
+     * Stage 5 — Band-pass (3-7 kHz): Isolates the "crack" range of bat-ball impact
+     * Stage 6 — AudioWorklet transient gate: Fast/slow RMS dual-follower — passes impulses
+     *            (bat-ball crack), suppresses sustained signals (voice, crowd hum)
+     * Stage 7 — Compressor: Final noise gate; only LOUD transients survive
      */
-    buildFilterChain() {
+    async buildFilterChain() {
         const ctx = this.audioContext;
 
-        // Stage 1: High-pass — cut everything below 1500 Hz
+        // Load the AudioWorklet processor module (voice suppressor)
+        // Falls back gracefully if worklets are not supported
+        let workletLoaded = false;
+        try {
+            await ctx.audioWorklet.addModule('js/audio-worklet-processor.js');
+            workletLoaded = true;
+            console.log('AudioWorklet voice suppressor loaded');
+        } catch (err) {
+            console.warn('AudioWorklet not available, skipping worklet stage:', err.message);
+        }
+
+        // Stage 1: Aggressive High-pass — cut everything below 3000 Hz
+        // Removes crowd noise, ground rumble, bass, and all human voice fundamentals
         this.highPassFilter = ctx.createBiquadFilter();
         this.highPassFilter.type = 'highpass';
-        this.highPassFilter.frequency.value = 1500;
-        this.highPassFilter.Q.value = 0.7;
+        this.highPassFilter.frequency.value = 3000;
+        this.highPassFilter.Q.value = 1.5; // Sharper cutoff
 
-        // Stage 2: Notch — suppress voice fundamental (200-400 Hz range)
+        // Stage 2: Notch — suppress voice harmonic at 800 Hz
         this.notchFilter = ctx.createBiquadFilter();
         this.notchFilter.type = 'notch';
-        this.notchFilter.frequency.value = 300;
-        this.notchFilter.Q.value = 2;
+        this.notchFilter.frequency.value = 800;
+        this.notchFilter.Q.value = 3;
 
-        // Stage 3: Band-pass — focus on bat-ball impact range (2-8 kHz)
+        // Stage 3: Notch — suppress upper voice harmonic at 1000 Hz
+        this.notchFilter2 = ctx.createBiquadFilter();
+        this.notchFilter2.type = 'notch';
+        this.notchFilter2.frequency.value = 1000;
+        this.notchFilter2.Q.value = 3;
+
+        // Stage 4: Notch — suppress upper voice harmonic at 2000 Hz
+        this.notchFilter3 = ctx.createBiquadFilter();
+        this.notchFilter3.type = 'notch';
+        this.notchFilter3.frequency.value = 2000;
+        this.notchFilter3.Q.value = 2.5;
+
+        // Stage 5: Tight Band-pass — focus ONLY on bat-ball "crack" (3-7 kHz)
         this.bandPassFilter = ctx.createBiquadFilter();
         this.bandPassFilter.type = 'bandpass';
-        this.bandPassFilter.frequency.value = 4500; // Center of 2-8 kHz
-        this.bandPassFilter.Q.value = 0.8; // Wide enough to capture the range
+        this.bandPassFilter.frequency.value = 5000;
+        this.bandPassFilter.Q.value = 1.2;
 
-        // Stage 4: Compressor acting as noise gate
-        // High threshold means only loud transients pass through
+        // Stage 7: Strong Compressor/Noise Gate
         this.compressor = ctx.createDynamicsCompressor();
-        this.compressor.threshold.value = -30;  // dB — signals below this are suppressed
-        this.compressor.knee.value = 5;
-        this.compressor.ratio.value = 12;       // Heavy compression of quiet sounds
-        this.compressor.attack.value = 0.001;   // 1ms — let fast transients through
-        this.compressor.release.value = 0.05;   // 50ms — quick release
+        this.compressor.threshold.value = -20;
+        this.compressor.knee.value = 3;
+        this.compressor.ratio.value = 20;
+        this.compressor.attack.value = 0.001;  // 1ms — let transients through
+        this.compressor.release.value = 0.03;  // 30ms
 
-        // Connect chain: source → highPass → notch → bandPass → compressor → analyser
+        // Stage 6: AudioWorklet transient gate (dual-follower voice suppressor)
+        if (workletLoaded) {
+            this.workletNode = new AudioWorkletNode(ctx, 'voice-suppressor');
+        }
+
+        // Connect chain
         this.microphone.connect(this.highPassFilter);
         this.highPassFilter.connect(this.notchFilter);
-        this.notchFilter.connect(this.bandPassFilter);
-        this.bandPassFilter.connect(this.compressor);
+        this.notchFilter.connect(this.notchFilter2);
+        this.notchFilter2.connect(this.notchFilter3);
+        this.notchFilter3.connect(this.bandPassFilter);
+
+        if (this.workletNode) {
+            this.bandPassFilter.connect(this.workletNode);
+            this.workletNode.connect(this.compressor);
+        } else {
+            this.bandPassFilter.connect(this.compressor);
+        }
+
         this.compressor.connect(this.analyser);
 
-        console.log('Multi-stage filter chain built:');
-        console.log('  1. High-pass: 1500 Hz (removes crowd rumble, bass)');
-        console.log('  2. Notch: 300 Hz (suppresses voice fundamentals)');
-        console.log('  3. Band-pass: 2-8 kHz (bat-ball impact range)');
-        console.log('  4. Compressor: threshold -30dB, ratio 12:1 (noise gate)');
+        console.log('Multi-stage Noise Filter Built:');
+        console.log('  1. High-pass: 3000 Hz (cuts crowd noise + all voice fundamentals)');
+        console.log('  2. Notch: 800 Hz (removes voice harmonic)');
+        console.log('  3. Notch: 1000 Hz (removes voice harmonic)');
+        console.log('  4. Notch: 2000 Hz (removes voice harmonic)');
+        console.log('  5. Band-pass: 3-7 kHz (bat-ball crack range)');
+        console.log('  6. Transient gate worklet:', workletLoaded ? 'ACTIVE' : 'SKIPPED (not supported)');
+        console.log('  7. Compressor: -20dB threshold, 20:1 ratio');
     }
 
     /**
@@ -480,7 +526,10 @@ class AudioProcessor {
 
         if (this.highPassFilter) this.highPassFilter.disconnect();
         if (this.notchFilter) this.notchFilter.disconnect();
+        if (this.notchFilter2) this.notchFilter2.disconnect();
+        if (this.notchFilter3) this.notchFilter3.disconnect();
         if (this.bandPassFilter) this.bandPassFilter.disconnect();
+        if (this.workletNode) this.workletNode.disconnect();
         if (this.compressor) this.compressor.disconnect();
 
         if (this.analyser) {

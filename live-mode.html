@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ultra Edge DRS - Live Stream Mode</title>
     <link rel="stylesheet" href="css/styles.css">
+
+    <!-- VDO.ninja SDK for direct MediaStream access (no iframe) -->
+    <script src="https://cdn.jsdelivr.net/gh/steveseguin/ninjasdk@latest/vdoninja-sdk.min.js"></script>
 </head>
 <body class="live-mode-body">
     <div class="main-container">
@@ -161,41 +164,6 @@
             </div>
             <!-- End Top Row Flex -->
 
-            <!-- Bottom Section: Analysis Tools & Controls -->
-            <div class="bottom-section">
-                <!-- Hot-Spot & Ball Tracking -->
-                <div class="analysis-tools">
-                    <div class="tool-panel hotspot-panel">
-                        <div class="panel-header">
-                            <h4>HOT-SPOT</h4>
-                            <label class="switch">
-                                <input type="checkbox" id="hotspotToggle">
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <canvas id="liveHotspotCanvas" class="analysis-canvas"></canvas>
-                        <div class="hotspot-status" id="hotspotStatusText">No contact detected</div>
-                    </div>
-
-                    <div class="tool-panel tracking-panel">
-                        <div class="panel-header">
-                            <h4>BALL TRACKING</h4>
-                            <label class="switch">
-                                <input type="checkbox" id="ballTrackingToggle">
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="tracking-viz">
-                            <canvas id="ballTrackingViz" class="analysis-canvas"></canvas>
-                        </div>
-                        <div class="tracking-data">
-                            <div class="data-item">Speed: <span id="liveSpeed">-</span></div>
-                            <div class="data-item">Angle: <span id="liveAngle">-</span></div>
-                            <div class="data-item">Bounce: <span id="liveBounce">-</span></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <!-- Action Controls Section -->
             <div class="control-section">
@@ -246,31 +214,6 @@
 
             <!-- Right Sidebar: Live Data & History -->
             <div class="right-sidebar">
-                <!-- Decision Display -->
-                <div class="decision-panel-live">
-                    <h3>LIVE DECISION</h3>
-                    <div class="decision-display" id="liveDecisionDisplay">
-                        <div class="decision-status">AWAITING REVIEW</div>
-                    </div>
-                    <div class="decision-breakdown">
-                        <div class="breakdown-item">
-                            <span class="breakdown-label">Ultra Edge:</span>
-                            <span class="breakdown-value" id="liveUltraEdge">-</span>
-                        </div>
-                        <div class="breakdown-item">
-                            <span class="breakdown-label">Hot-Spot:</span>
-                            <span class="breakdown-value" id="liveHotspot">-</span>
-                        </div>
-                        <div class="breakdown-item">
-                            <span class="breakdown-label">Ball Track:</span>
-                            <span class="breakdown-value" id="liveBallTrack">-</span>
-                        </div>
-                    </div>
-                    <div class="decision-confidence-bar">
-                        <div class="confidence-fill" id="confidenceFill"></div>
-                        <span class="confidence-text" id="confidenceText">0%</span>
-                    </div>
-                </div>
 
                 <!-- HIDDEN: Event Log (kept for future reuse)
                 <div class="event-log-panel">
@@ -409,38 +352,72 @@
                 <div class="source-option">
                     <h4>📡 VDO.ninja Remote Stream</h4>
                     <p style="font-size: 13px; margin: 8px 0;">Display a remote VDO.ninja stream (from phone, remote camera, etc.)</p>
-                    <p style="font-size: 12px; color: #ff8800; margin: 8px 0;">
-                        ⚠️ <strong>Note:</strong> Due to browser security, VDO.ninja audio may not be accessible for spike detection.<br>
-                        The video will display, but audio analysis may require local microphone fallback.
-                    </p>
-                    <div class="vdo-input-group">
-                        <input type="text" id="vdoNinjaUrl" class="vdo-url-input"
-                               placeholder="https://vdo.ninja/?view=STREAM_ID&push">
-                        <button class="btn btn-primary" id="connectVdoBtn">🔗 Connect</button>
+
+                    <!-- Mode selector: SDK vs iframe -->
+                    <div style="margin: 15px 0;">
+                        <label style="font-size: 12px; color: #aaa; display: block; margin-bottom: 8px;">Connection Mode:</label>
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <button class="btn btn-small" id="sdkModeBtn" style="flex: 1; background: #00ff41; color: #000;">
+                                ✅ SDK Mode (Recommended)
+                            </button>
+                            <button class="btn btn-small btn-secondary" id="iframeModeBtn" style="flex: 1;">
+                                Iframe Mode (Legacy)
+                            </button>
+                        </div>
                     </div>
-                    <div class="connection-status-row">
+
+                    <!-- SDK Mode (default, recommended) -->
+                    <div id="sdkModeContainer" style="display: block;">
+                        <p style="font-size: 12px; color: #00ff41; margin: 8px 0;">
+                            ✅ <strong>SDK Mode:</strong> Direct MediaStream access for full audio/video capture!
+                        </p>
+                        <p style="font-size: 11px; color: #aaa; margin: 8px 0;">
+                            <strong>Setup:</strong> On your phone, go to: <code>vdo.ninja/?push=ROOMNAME</code>
+                        </p>
+                        <div class="vdo-input-group">
+                            <input type="text" id="vdoRoomName" class="vdo-url-input"
+                                   placeholder="Enter room name (e.g., cricket-match-1)">
+                            <button class="btn btn-primary" id="connectSdkBtn">🔗 Join Room</button>
+                        </div>
+                        <p style="font-size: 11px; color: #666; margin-top: 8px;">
+                            💡 Phone and laptop must use the same room name
+                        </p>
+                    </div>
+
+                    <!-- iframe Mode (legacy, for reference) -->
+                    <div id="iframeModeContainer" style="display: none;">
+                        <p style="font-size: 12px; color: #ff8800; margin: 8px 0;">
+                            ⚠️ <strong>iframe Mode:</strong> Requires tab capture for audio (shows permission prompt)
+                        </p>
+                        <div class="vdo-input-group">
+                            <input type="text" id="vdoNinjaUrl" class="vdo-url-input"
+                                   placeholder="https://vdo.ninja/?view=STREAM_ID">
+                            <button class="btn btn-primary" id="connectVdoBtn">🔗 Connect</button>
+                        </div>
+                        <p style="font-size: 11px; color: #666; margin-top: 8px;">
+                            💡 Paste the full VDO.ninja URL here
+                        </p>
+                    </div>
+
+                    <!-- Connection status (shared) -->
+                    <div class="connection-status-row" style="margin-top: 15px;">
                         <span class="connection-dot" id="connectionDot"></span>
                         <span id="connectionStatusText">Not Connected</span>
                     </div>
-                    <p style="font-size: 11px; color: #666; margin-top: 10px;">
-                        💡 Tip: Include <code>&push</code> parameter for better compatibility
-                    </p>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Scripts -->
-    <script src="js/audio-processor.js?v=20260214"></script>
+    <script src="js/audio-processor.js?v=20260222d"></script>
     <script src="js/spike-detector.js?v=20260214"></script>
     <script src="js/waveform-visualizer.js?v=20260214"></script>
     <script src="js/replay-controller.js?v=20260214"></script>
-    <script src="js/ball-tracker.js?v=20260214"></script>
-    <script src="js/decision-system.js?v=20260214"></script>
-    <script src="js/hotspot-overlay.js?v=20260214"></script>
     <script src="js/live-stream-handler.js?v=20260214"></script>
     <script src="js/vdo-ninja-connector.js?v=20260214"></script>
+    <script src="js/vdo-ninja-sdk-connector.js?v=20260222c"></script>
     <script src="js/multi-camera-sync.js?v=20260214"></script>
-    <script src="js/live-mode-main.js?v=20260214"></script>
+    <script src="js/live-mode-main.js?v=20260222e"></script>
 </body>
 </html>

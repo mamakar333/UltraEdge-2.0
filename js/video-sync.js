@@ -18,6 +18,15 @@ class VideoSync {
         this.totalFrames = 0;
         this.fps = 30; // Default FPS, will be detected
 
+        // Filter chain nodes (same stages as AudioProcessor)
+        this.highPassFilter = null;
+        this.notchFilter = null;
+        this.notchFilter2 = null;
+        this.notchFilter3 = null;
+        this.bandPassFilter = null;
+        this.workletNode = null;
+        this.compressor = null;
+
         // Audio buffers
         this.audioBuffer = null; // Decoded audio buffer for entire video
         this.audioData = new Uint8Array(2048);
@@ -54,9 +63,8 @@ class VideoSync {
             this.analyser.fftSize = 2048;
             this.analyser.smoothingTimeConstant = 0.1; // Reduced for sharper spikes (was 0.3)
 
-            // Connect audio graph
-            this.audioSource.connect(this.analyser);
-            this.analyser.connect(this.audioContext.destination);
+            // Build filter chain and connect audio graph
+            await this._buildFilterChain();
 
             // Setup event listeners
             this.setupVideoEventListeners();
@@ -85,6 +93,84 @@ class VideoSync {
 
             return false;
         }
+    }
+
+    /**
+     * Build 7-stage filter chain for bat-ball isolation (same as AudioProcessor).
+     * Connects: audioSource → highPass → notch×3 → bandPass → worklet → compressor → analyser → destination
+     */
+    async _buildFilterChain() {
+        const ctx = this.audioContext;
+
+        // Load AudioWorklet voice suppressor (graceful fallback if unavailable)
+        let workletLoaded = false;
+        try {
+            await ctx.audioWorklet.addModule('js/audio-worklet-processor.js');
+            workletLoaded = true;
+            console.log('VideoSync: AudioWorklet voice suppressor loaded');
+        } catch (err) {
+            console.warn('VideoSync: AudioWorklet not available, skipping worklet stage:', err.message);
+        }
+
+        // Stage 1: High-pass — remove everything below 3000 Hz (crowd + voice fundamentals)
+        this.highPassFilter = ctx.createBiquadFilter();
+        this.highPassFilter.type = 'highpass';
+        this.highPassFilter.frequency.value = 3000;
+        this.highPassFilter.Q.value = 1.5;
+
+        // Stage 2-4: Notch filters — suppress voice harmonics
+        this.notchFilter = ctx.createBiquadFilter();
+        this.notchFilter.type = 'notch';
+        this.notchFilter.frequency.value = 800;
+        this.notchFilter.Q.value = 3;
+
+        this.notchFilter2 = ctx.createBiquadFilter();
+        this.notchFilter2.type = 'notch';
+        this.notchFilter2.frequency.value = 1000;
+        this.notchFilter2.Q.value = 3;
+
+        this.notchFilter3 = ctx.createBiquadFilter();
+        this.notchFilter3.type = 'notch';
+        this.notchFilter3.frequency.value = 2000;
+        this.notchFilter3.Q.value = 2.5;
+
+        // Stage 5: Band-pass — focus on bat-ball crack range (3-7 kHz)
+        this.bandPassFilter = ctx.createBiquadFilter();
+        this.bandPassFilter.type = 'bandpass';
+        this.bandPassFilter.frequency.value = 5000;
+        this.bandPassFilter.Q.value = 1.2;
+
+        // Stage 7: Compressor / noise gate
+        this.compressor = ctx.createDynamicsCompressor();
+        this.compressor.threshold.value = -20;
+        this.compressor.knee.value = 3;
+        this.compressor.ratio.value = 20;
+        this.compressor.attack.value = 0.001;
+        this.compressor.release.value = 0.03;
+
+        // Stage 6: Transient gate worklet
+        if (workletLoaded) {
+            this.workletNode = new AudioWorkletNode(ctx, 'voice-suppressor');
+        }
+
+        // Wire up the chain
+        this.audioSource.connect(this.highPassFilter);
+        this.highPassFilter.connect(this.notchFilter);
+        this.notchFilter.connect(this.notchFilter2);
+        this.notchFilter2.connect(this.notchFilter3);
+        this.notchFilter3.connect(this.bandPassFilter);
+
+        if (this.workletNode) {
+            this.bandPassFilter.connect(this.workletNode);
+            this.workletNode.connect(this.compressor);
+        } else {
+            this.bandPassFilter.connect(this.compressor);
+        }
+
+        this.compressor.connect(this.analyser);
+        this.analyser.connect(ctx.destination); // allow video audio to play through
+
+        console.log('VideoSync filter chain active — voice suppressor:', workletLoaded ? 'ON' : 'OFF (fallback)');
     }
 
     /**
@@ -166,6 +252,12 @@ class VideoSync {
      * Start real-time audio analysis
      */
     startAudioAnalysis() {
+        // Resume AudioContext — required in new tabs where no user interaction has
+        // occurred yet (browser autoplay policy suspends AudioContext by default)
+        if (this.audioContext && this.audioContext.state === 'suspended') {
+            this.audioContext.resume().catch(() => {});
+        }
+
         const analyze = () => {
             if (this.video.paused) return;
 
@@ -476,6 +568,14 @@ class VideoSync {
         if (this.audioSource) {
             this.audioSource.disconnect();
         }
+
+        if (this.highPassFilter) this.highPassFilter.disconnect();
+        if (this.notchFilter) this.notchFilter.disconnect();
+        if (this.notchFilter2) this.notchFilter2.disconnect();
+        if (this.notchFilter3) this.notchFilter3.disconnect();
+        if (this.bandPassFilter) this.bandPassFilter.disconnect();
+        if (this.workletNode) this.workletNode.disconnect();
+        if (this.compressor) this.compressor.disconnect();
 
         if (this.analyser) {
             this.analyser.disconnect();
