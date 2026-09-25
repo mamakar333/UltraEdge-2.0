@@ -129,12 +129,12 @@ The misses are faint edges that sit less than about 10 dB above the crowd noise.
 
 ## Hosting
 
-UltraEdge is published with **GitHub Pages** from this repository (Settings → Pages → Deploy from branch `main`, folder `/`):
+UltraEdge is a free **Render Static Site** built from this repo (`render.yaml`): there is no build step, it never sleeps, and it redeploys on every push to `main`.
 
-* laptop: `https://mamakar333.github.io/UltraEdge-2.0/ultraedge.html`
-* umpire phones: `https://mamakar333.github.io/UltraEdge-2.0/remote.html` (the CrickVision app opens this page)
+* laptop: `https://ultraedge.onrender.com/ultraedge.html`
+* umpire phones: `https://ultraedge.onrender.com/remote.html` (the CrickVision app opens this page)
 
-Every push to `main` updates the laptop and the phones; the CrickVision app doesn't need a new release. `python3 serve.py` still works for local use.
+The CrickVision server holds the address in its `ULTRAEDGE_URL` setting. The app and the website read it from `GET /api/v1/config`, so moving UltraEdge to another host only needs that setting changed, not a new app release. Any HTTPS static host works, since browsers only allow the camera and microphone on secure pages. `python3 serve.py` still works for local use.
 
 ## Files
 
