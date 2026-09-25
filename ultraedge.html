@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UltraEdge 3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/ultraedge.css?v=3.0.0">
+<!-- VDO.ninja SDK: receive phone camera/mic as a real MediaStream -->
+<script src="https://cdn.jsdelivr.net/gh/steveseguin/ninjasdk@latest/vdoninja-sdk.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">ULTRA<b>EDGE</b></span><span class="ver">3.0</span></div>
+  <div class="pills">
+    <span class="pill" id="pillState"><i class="dot"></i><span>IDLE</span></span>
+    <span class="pill" id="pillVideo">VIDEO —</span>
+    <span class="pill" id="pillAudio">AUDIO —</span>
+    <span class="pill" id="pillBuf">BUFFER —</span>
+  </div>
+  <div class="actions">
+    <button class="btn ghost" id="btnFile">Analyse video file</button>
+    <input type="file" id="fileInput" accept="video/*,audio/*" hidden>
+    <button class="btn" id="btnSetup">Setup sources</button>
+    <button class="btn ghost" id="btnStop" hidden>Stop</button>
+    <a class="btn ghost" href="index.html">Old version</a>
+  </div>
+</header>
+
+<main class="grid">
+  <section class="panel video-panel">
+    <div class="panel-h"><span>CAMERA</span><span class="muted" id="videoInfo">no camera</span></div>
+    <div class="video-wrap">
+      <video id="liveVideo" autoplay playsinline muted></video>
+      <div class="live-badge" id="liveBadge">LIVE</div>
+      <div class="spike-flash" id="spikeFlash">SPIKE</div>
+      <div class="video-warn" id="videoWarn"></div>
+      <div class="empty" id="videoEmpty">
+        <p>No sources yet.</p>
+        <button class="btn big" id="btnSetup2">Set up camera &amp; microphone</button>
+        <p class="muted small">or drop a match video on this page to analyse it</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel scope-panel">
+    <div class="panel-h"><span>ULTRAEDGE — LIVE</span>
+      <label class="tog"><input type="checkbox" id="scopeHp" checked> HF view</label>
+    </div>
+    <canvas id="scope" width="1200" height="420"></canvas>
+    <div class="meter"><div id="meterFill"></div></div>
+    <div class="controls">
+      <button class="btn big primary" id="btnReviewLast" disabled title="Shortcut: R">REVIEW LAST 3 s</button>
+      <div class="ctl">
+        <label>Sensitivity <b id="sensVal">85</b></label>
+        <input type="range" id="sens" min="0" max="100" value="85">
+      </div>
+      <div class="ctl row">
+        <label class="tog"><input type="checkbox" id="autoReview"> Auto-open replay on spike</label>
+        <label class="tog"><input type="checkbox" id="listen"> Listen to mic</label>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel hits-panel">
+    <div class="panel-h"><span>DELIVERIES / SPIKES</span>
+      <span><button class="btn tiny ghost" id="btnExportLog">Export log</button> <button class="btn tiny ghost" id="btnClear">Clear</button></span>
+    </div>
+    <div class="hits" id="hits"><p class="muted small pad">Spikes appear here. Click one to open the frame-by-frame UltraEdge replay.</p></div>
+  </section>
+</main>
+
+<footer class="status" id="status">Ready.</footer>
+
+<!-- ============================ SETUP ============================ -->
+<div class="modal" id="setup">
+  <div class="sheet">
+    <div class="sheet-h"><h2>Sources</h2><button class="x" id="setupClose">✕</button></div>
+    <div class="cols">
+      <div class="col">
+        <h3>1 · Camera (side-on to the batter)</h3>
+        <label class="radio"><input type="radio" name="vsrc" value="phone" checked> Phone camera (via VDO.ninja)</label>
+        <label class="radio"><input type="radio" name="vsrc" value="local"> This computer's camera</label>
+        <select id="camSelect" class="sel"></select>
+        <label class="radio"><input type="radio" name="vsrc" value="none"> No camera (audio only)</label>
+
+        <h3>2 · Microphone (at the stumps)</h3>
+        <label class="radio"><input type="radio" name="asrc" value="same" checked> Same phone as the camera</label>
+        <label class="radio"><input type="radio" name="asrc" value="phone2"> A second phone at the stumps</label>
+        <label class="radio"><input type="radio" name="asrc" value="local"> This computer's microphone / USB mic</label>
+        <select id="micSelect" class="sel"></select>
+        <p class="muted small">Voice processing (echo cancel, noise suppression, auto-gain) is switched off everywhere — it erases edge clicks.</p>
+      </div>
+      <div class="col" id="phoneCol">
+        <h3>Phone links</h3>
+        <div class="phone" id="phoneCam">
+          <div class="phone-h">Camera phone · stream ID <input id="camId" class="id"></div>
+          <div class="qr" id="qrCam"></div>
+          <div class="link"><code id="linkCam"></code><button class="btn tiny" data-copy="linkCam">Copy</button></div>
+        </div>
+        <div class="phone" id="phoneMic">
+          <div class="phone-h">Stump-mic phone · stream ID <input id="micId" class="id"></div>
+          <div class="qr" id="qrMic"></div>
+          <div class="link"><code id="linkMic"></code><button class="btn tiny" data-copy="linkMic">Copy</button></div>
+        </div>
+        <p class="muted small">Scan the QR on the phone (any network with internet). Allow camera/mic, choose the rear camera, lock the screen rotation. Keep the phone screen on.</p>
+      </div>
+    </div>
+    <div class="sheet-f">
+      <span class="muted small" id="setupMsg"></span>
+      <button class="btn big primary" id="btnStart">Connect &amp; start</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ REVIEW ============================ -->
+<div class="review" id="review">
+  <div class="rv-top">
+    <div class="rv-title"><span class="logo">ULTRA<b>EDGE</b></span> <span id="rvTitle">REVIEW</span></div>
+    <div class="rv-verdict">
+      <button class="btn danger" id="rvEdge" title="E">SPIKE · EDGE</button>
+      <button class="btn ok" id="rvNoEdge" title="N">NO SPIKE</button>
+    </div>
+    <button class="x" id="rvClose" title="Esc">✕</button>
+  </div>
+  <div class="rv-stage"><canvas id="rvCanvas" width="1280" height="1000"></canvas></div>
+  <canvas id="rvOverview" width="1600" height="70"></canvas>
+  <div class="rv-bar">
+    <div class="grp">
+      <button class="btn" id="rvPrev" title="← (Shift = 5 frames)">◀ FRAME</button>
+      <button class="btn primary" id="rvPlay" title="Space">▶ PLAY</button>
+      <button class="btn" id="rvNext" title="→">FRAME ▶</button>
+      <select id="rvSpeed" class="sel inline">
+        <option value="0.05">1/20×</option><option value="0.125">1/8×</option><option value="0.25" selected>1/4×</option><option value="0.5">1/2×</option><option value="1">1×</option>
+      </select>
+      <label class="tog"><input type="checkbox" id="rvSound" checked> Sound</label>
+      <button class="btn" id="rvHit" title="H">NEXT SPIKE</button>
+    </div>
+    <div class="grp">
+      <label>Window <b id="rvZoomVal">300 ms</b><input type="range" id="rvZoom" min="40" max="2000" step="10" value="300"></label>
+      <label>Gain<input type="range" id="rvGain" min="-2" max="4" step="0.25" value="0"></label>
+      <label class="tog"><input type="checkbox" id="rvFilter" checked> HF view</label>
+    </div>
+    <div class="grp">
+      <label>A/V sync <b id="rvOffsetVal">0 ms</b><input type="range" id="rvOffset" min="-300" max="300" step="1" value="0"></label>
+      <button class="btn ghost" id="rvSyncHere" title="Step to the frame where a clap / bat tap makes contact, then press">Sync to this frame</button>
+      <button class="btn ghost" id="rvSnapshot">PNG</button>
+      <button class="btn ghost" id="rvExport">Export replay</button>
+    </div>
+  </div>
+  <div class="rv-info" id="rvInfo"></div>
+</div>
+
+<div class="drop" id="drop">Drop video to analyse</div>
+
+<script type="module" src="js/ue/app.js?v=3.0.0"></script>
+</body>
+</html>

@@ -25,7 +25,7 @@ sleep 1
 # Start the server
 echo "🚀 Starting server on http://localhost:8001"
 echo ""
-python3 -m http.server 8001 &
+python3 serve.py 8001 &
 SERVER_PID=$!
 
 # Wait for server to start
@@ -38,20 +38,20 @@ echo ""
 # Detect OS and open browser accordingly
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS
-    open http://localhost:8001/video-mode.html
+    open http://localhost:8001/ultraedge.html
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Linux
-    xdg-open http://localhost:8001/video-mode.html 2>/dev/null || \
-    sensible-browser http://localhost:8001/video-mode.html 2>/dev/null || \
-    firefox http://localhost:8001/video-mode.html 2>/dev/null
+    xdg-open http://localhost:8001/ultraedge.html 2>/dev/null || \
+    sensible-browser http://localhost:8001/ultraedge.html 2>/dev/null || \
+    firefox http://localhost:8001/ultraedge.html 2>/dev/null
 elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
     # Windows (Git Bash)
-    start http://localhost:8001/video-mode.html
+    start http://localhost:8001/ultraedge.html
 fi
 
 echo ""
 echo "✅ Server is running!"
-echo "📱 Access the app at: http://localhost:8001/video-mode.html"
+echo "📱 Access the app at: http://localhost:8001/ultraedge.html"
 echo ""
 echo "Press Ctrl+C to stop the server"
 echo ""

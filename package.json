@@ -1,0 +1,11 @@
+{
+  "name": "ultraedge",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "python3 serve.py 8001",
+    "test": "node tests/make-media.mjs && node tests/detector.test.mjs",
+    "test:e2e": "python3 tests/e2e.py"
+  }
+}

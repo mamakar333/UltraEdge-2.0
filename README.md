@@ -1,5 +1,8 @@
 # Ultra Edge DRS - Professional Cricket Analysis System
 
+> **New: UltraEdge 3** (`ultraedge.html`). This is a rebuilt snickometer that uses a phone camera and a stump mic. It detects spikes to the exact audio sample and gives a frame-by-frame replay with the synced trace. Run `python3 serve.py`, then open http://localhost:8001/ultraedge.html. See [ULTRAEDGE_GUIDE.md](ULTRAEDGE_GUIDE.md).
+
+
 A comprehensive web-based Ultra Edge cricket Decision Review System (DRS) designed for professional cricket analysis, OBS Studio integration, and real-time decision making. This system provides both **Video Analysis Mode** and **Live Stream Mode** with complete DRS capabilities.
 
 ![Version](https://img.shields.io/badge/Version-2.1.0-brightgreen)
