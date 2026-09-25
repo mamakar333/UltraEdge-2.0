@@ -84,7 +84,85 @@ export class ReviewPlayer {
         this.audioCtx = null;
         this._src = null;
         this.onClose = null;
+        /** called after every repaint / state change (the studio broadcasts its state from here) */
+        this.onChange = null;
+        /** optional extra AudioNode (same AudioContext) that replay sound is also sent to (studio program) */
+        this.extraOut = null;
+        this.angle = 0;          // active camera angle (multi-camera sessions)
+        this.grid = false;       // show every angle at once
         this._bind();
+    }
+
+    /** Create (once) and return the AudioContext used for replay sound. */
+    ensureAudio() {
+        if (!this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        return this.audioCtx;
+    }
+
+    get angles() { return this.session?.angles || null; }
+
+    /** Switch camera angle, keeping the same moment in time (audio clock). */
+    setAngle(k) {
+        const s = this.session, A = this.angles;
+        if (!s || !A || k < 0 || k >= A.length || k === this.angle) { this._changed(); return; }
+        const wasPlaying = this.playing; this._pause();
+        const audioT = s.frames.timeOf(this.i) + s.frames.frameDur / 2 - this.offsetMs;
+        this.angle = k;
+        s.frames = A[k].frames;
+        this.offsetMs = A[k].offsetMs || 0;
+        this.$('rvOffset').value = this.offsetMs;
+        this.$('rvOffsetVal').textContent = `${this.offsetMs >= 0 ? '+' : ''}${this.offsetMs} ms`;
+        this.i = s.frames.indexAt(audioT + this.offsetMs);
+        this._renderAngles();
+        this.render(); this.renderOverview();
+        if (wasPlaying) this._play();
+    }
+
+    setGrid(on) {
+        this.grid = !!on && !!this.angles && this.angles.length > 1;
+        this._renderAngles();
+        this.render();
+    }
+
+    setSpeed(v) {
+        this.speed = +v || 0.25; this.$('rvSpeed').value = String(this.speed);
+        if (this.playing) this._restartPlayback();
+        this._changed();
+    }
+
+    setWindow(ms) {
+        this.windowMs = Math.max(40, Math.min(3000, Math.round(+ms || 300)));
+        this._syncZoom(); this.renderOverview();
+    }
+
+    setSound(on) { this.sound = !!on; this.$('rvSound').checked = this.sound; if (this.playing) this._restartPlayback(); this._changed(); }
+
+    setHp(on) { this.useHp = !!on; this.$('rvFilter').checked = this.useHp; this._autoGain(); this.render(); this.renderOverview(); }
+
+    /** Plain snapshot of the replay (for remote controllers). */
+    state() {
+        const s = this.session;
+        if (!s || !this.isOpen) return { open: false };
+        return {
+            open: true, title: s.title || '', frame: this.i + 1, count: s.frames.count,
+            fps: Math.round(1000 / s.frames.frameDur), playing: this.playing, speed: this.speed, windowMs: this.windowMs,
+            sound: this.sound, hp: this.useHp, offsetMs: this.offsetMs, verdict: s.verdict || null,
+            hits: s.hits.length, angle: this.angle, grid: this.grid,
+            angles: (this.angles || [{ name: 'Camera' }]).map(a => a.name), info: this.$('rvInfo').textContent,
+        };
+    }
+
+    _changed() { if (this.onChange) { try { this.onChange(); } catch (e) { console.warn(e); } } }
+
+    _renderAngles() {
+        const box = this.$('rvAngles'); if (!box) return;
+        const A = this.angles;
+        box.hidden = !A || A.length < 2;
+        if (box.hidden) { box.innerHTML = ''; return; }
+        box.innerHTML = A.map((a, k) => `<button class="btn tiny${!this.grid && k === this.angle ? ' primary' : ''}" data-angle="${k}" title="${k + 1}">${k + 1} · ${a.name}</button>`).join('') +
+            `<button class="btn tiny${this.grid ? ' primary' : ''}" data-grid="1" title="G">GRID</button>`;
+        box.querySelectorAll('[data-angle]').forEach(b => b.onclick = () => { this.grid = false; this.setAngle(+b.dataset.angle); this._renderAngles(); this.render(); });
+        box.querySelector('[data-grid]').onclick = () => this.setGrid(!this.grid);
     }
 
     _bind() {
@@ -94,8 +172,8 @@ export class ReviewPlayer {
         $('rvPlay').onclick = () => this.togglePlay();
         $('rvHit').onclick = () => this.jumpToHit(1);
         $('rvClose').onclick = () => this.close();
-        $('rvSpeed').onchange = (e) => { this.speed = +e.target.value; if (this.playing) this._restartPlayback(); };
-        $('rvSound').onchange = (e) => { this.sound = e.target.checked; if (this.playing) this._restartPlayback(); };
+        $('rvSpeed').onchange = (e) => this.setSpeed(e.target.value);
+        $('rvSound').onchange = (e) => this.setSound(e.target.checked);
         $('rvZoom').oninput = (e) => { this.windowMs = +e.target.value; $('rvZoomVal').textContent = `${this.windowMs} ms`; this.render(); };
         $('rvGain').oninput = (e) => { this.gainUser = Math.pow(2, +e.target.value); this.render(); };
         $('rvFilter').onchange = (e) => { this.useHp = e.target.checked; this._autoGain(); this.render(); this.renderOverview(); };
@@ -119,6 +197,8 @@ export class ReviewPlayer {
             else if (k === 'n' || k === 'N') this.setVerdict('NO EDGE');
             else if (k === '+' || k === '=') { this.windowMs = Math.max(40, this.windowMs / 1.5 | 0); this._syncZoom(); }
             else if (k === '-') { this.windowMs = Math.min(3000, this.windowMs * 1.5 | 0); this._syncZoom(); }
+            else if (k >= '1' && k <= '4' && this.angles) { this.grid = false; this.setAngle(+k - 1); this._renderAngles(); this.render(); }
+            else if ((k === 'g' || k === 'G') && this.angles) this.setGrid(!this.grid);
         };
         window.addEventListener('keydown', this._key);
     }
@@ -132,8 +212,17 @@ export class ReviewPlayer {
      */
     async open(session, offsetMs = 0) {
         this._pause();
-        if (this.session && this.session !== session) this.session.frames.dispose?.();
+        if (this.session && this.session !== session) {
+            if (this.session.angles) this.session.angles.forEach(a => a.frames.dispose?.()); else this.session.frames.dispose?.();
+        }
         this.session = session;
+        this.grid = false;
+        if (session.angles && session.angles.length) {
+            this.angle = Math.max(0, Math.min(session.angles.length - 1, session.angle || 0));
+            session.frames = session.angles[this.angle].frames;
+            offsetMs = session.angles[this.angle].offsetMs || 0;
+        } else this.angle = 0;
+        this._renderAngles();
         this.offsetMs = offsetMs;
         this.$('rvOffset').value = offsetMs;
         this.$('rvOffsetVal').textContent = `${offsetMs >= 0 ? '+' : ''}${offsetMs} ms`;
@@ -150,6 +239,7 @@ export class ReviewPlayer {
         this._pause();
         this.root.classList.remove('open');
         if (this.onClose) this.onClose();
+        this._changed();
     }
 
     _autoGain() {
@@ -169,7 +259,8 @@ export class ReviewPlayer {
         this.offsetMs = Math.round(ms);
         this.$('rvOffset').value = this.offsetMs;
         this.$('rvOffsetVal').textContent = `${this.offsetMs >= 0 ? '+' : ''}${this.offsetMs} ms`;
-        if (fromUser && this.onOffsetChange) this.onOffsetChange(this.offsetMs);
+        if (this.angles) this.angles[this.angle].offsetMs = this.offsetMs;
+        if (fromUser && this.onOffsetChange) this.onOffsetChange(this.offsetMs, this.angle);
         this.render(); this.renderOverview();
     }
 
@@ -212,15 +303,18 @@ export class ReviewPlayer {
     }
 
     _pause() {
+        const was = this.playing;
         this.playing = false;
         this._stopAudio();
         const b = this.$('rvPlay'); if (b) b.textContent = '▶ PLAY';
+        if (was) this._changed();
     }
 
     _play() {
         const s = this.session; if (!s) return;
         this.playing = true;
         this.$('rvPlay').textContent = '❚❚ PAUSE';
+        this._changed();
         // restart from the beginning if we're parked on the last frame
         if (this.i >= s.frames.count - 1) this.i = 0;
         this._restartPlayback();
@@ -249,8 +343,7 @@ export class ReviewPlayer {
         this._audioClock = false;
         if (!this.sound) return;
         try {
-            if (!this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const ctx = this.audioCtx;
+            const ctx = this.ensureAudio();
             if (ctx.state === 'suspended') ctx.resume();
             if (!s._abuf) {
                 s._abuf = ctx.createBuffer(1, s.raw.length, s.fs);
@@ -261,6 +354,7 @@ export class ReviewPlayer {
             src.playbackRate.value = this.speed;   // tape-style slow motion (pitch drops like a broadcast slo-mo)
             const g = ctx.createGain(); g.gain.value = 1;
             src.connect(g).connect(ctx.destination);
+            if (this.extraOut) { try { g.connect(this.extraOut); } catch { } }
             // audio sample that belongs with this frame: video time − A/V offset
             const posSec = (this._clipT0 - this.offsetMs - s.audioT0) / 1000;
             const when = ctx.currentTime + 0.03;
@@ -302,9 +396,24 @@ export class ReviewPlayer {
     async render() {
         const s = this.session; if (!s) return;
         const token = (this._tok = (this._tok || 0) + 1);
-        const img = await s.frames.get(this.i);
+        let img;
+        if (this.grid && this.angles) {
+            // every angle at the same moment on the audio clock
+            const audioT = s.frames.timeOf(this.i) + s.frames.frameDur / 2 - this.offsetMs;
+            img = await Promise.all(this.angles.map((a) => a.frames.get(a.frames.indexAt(audioT + (a.offsetMs || 0)))));
+        } else img = await s.frames.get(this.i);
         if (token !== this._tok) return; // a newer render started
         this.drawComposite(img);
+        this._changed();
+    }
+
+    /** Draw one picture letterboxed into a box. */
+    _drawFit(ctx, img, x, y, w, h) {
+        const iw = img.videoWidth || img.width, ih = img.videoHeight || img.height;
+        if (!iw || !ih) return;
+        const sc = Math.min(w / iw, h / ih);
+        const dw = iw * sc, dh = ih * sc;
+        ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
     }
 
     drawComposite(img) {
@@ -312,11 +421,28 @@ export class ReviewPlayer {
         const W = this.canvas.width, H = this.canvas.height;
         const VH = Math.round(H * 0.72), SH = H - VH;
         ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-        // --- video frame (letterboxed) ---
-        const iw = img.videoWidth || img.width, ih = img.videoHeight || img.height;
-        const sc = Math.min(W / iw, VH / ih);
-        const dw = iw * sc, dh = ih * sc;
-        ctx.drawImage(img, (W - dw) / 2, (VH - dh) / 2, dw, dh);
+        // --- video frame(s) (letterboxed) ---
+        if (Array.isArray(img)) {
+            const n = img.length, cols = n <= 2 ? n : 2, rows = Math.ceil(n / cols);
+            const cw = W / cols, ch = VH / rows;
+            img.forEach((im, k) => {
+                const x = (k % cols) * cw, y = Math.floor(k / cols) * ch;
+                this._drawFit(ctx, im, x + 2, y + 2, cw - 4, ch - 4);
+                ctx.font = 'bold 18px "Barlow Condensed", "Arial Narrow", sans-serif';
+                const name = `${k + 1} · ${this.angles[k].name}`;
+                ctx.fillStyle = k === this.angle ? 'rgba(255,196,0,0.9)' : 'rgba(0,0,0,0.6)';
+                ctx.fillRect(x + 8, y + 8, ctx.measureText(name).width + 16, 26);
+                ctx.fillStyle = k === this.angle ? '#000' : '#fff'; ctx.fillText(name, x + 16, y + 27);
+            });
+        } else {
+            this._drawFit(ctx, img, 0, 0, W, VH);
+            if (this.angles && this.angles.length > 1) {
+                ctx.font = 'bold 18px "Barlow Condensed", "Arial Narrow", sans-serif';
+                const name = `${this.angle + 1} · ${this.angles[this.angle].name}`;
+                ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(16, 12, ctx.measureText(name).width + 16, 26);
+                ctx.fillStyle = '#fff'; ctx.fillText(name, 24, 31);
+            }
+        }
 
         const ft = s.frames.timeOf(this.i), fd = s.frames.frameDur;
         const center = ft + fd / 2;
@@ -399,8 +525,7 @@ export class ReviewPlayer {
         let src = null;
         if (this.sound) {
             try {
-                if (!this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const ctx = this.audioCtx; if (ctx.state === 'suspended') await ctx.resume();
+                const ctx = this.ensureAudio(); if (ctx.state === 'suspended') await ctx.resume();
                 if (!s._abuf) { s._abuf = ctx.createBuffer(1, s.raw.length, s.fs); s._abuf.copyToChannel(s.raw, 0); }
                 const dest = ctx.createMediaStreamDestination();
                 src = ctx.createBufferSource(); src.buffer = s._abuf; src.playbackRate.value = this.speed;

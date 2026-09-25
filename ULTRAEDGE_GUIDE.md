@@ -55,6 +55,38 @@ If the camera panel shows a yellow warning, it means the picture is missing, too
 * **Very dark:** the lens is covered, pointing at the ground, or there is too little light. Phones also drop their frame rate in low light.
 * **Portrait:** turn the phone sideways.
 
+## Multiple cameras (up to 4)
+
+In **Setup sources**, press **+ Add camera** to add up to four angles, for example *Side-on*, *Front-on*, *Behind the stumps* and *Wide*. Each camera can be a phone (it gets its own QR code) or a camera plugged into this computer. There is still one stump mic, and every angle is lined up against its clock.
+
+* **Live:** all cameras are shown in a grid. Click a camera, or press `1`–`4`, to show it large. Press `0` or click it again to go back to the grid.
+* **Replay:** every delivery keeps the frames of every angle. Switch angles with the angle buttons or `1`–`4`: the replay stays on the same moment in time. **GRID** (`G`) shows all angles at once, each at the same instant of the audio.
+* **Sync:** each camera has its own A/V offset. Calibrate each angle once (select the angle in the replay, then **Sync to this frame**).
+* Memory: with three or four cameras each one keeps 12 s of replay frames, instead of 20 s.
+
+## Umpire view (phones see and control this screen)
+
+The computer running UltraEdge is the source of truth: the cameras and the stump mic connect to it, and it does the detection, the buffering and the replays. Umpire phones **mirror** its screen live and can do everything the operator does in a review:
+
+* review the last 3 s, or open any detected delivery
+* step frames (or swipe across the picture), play in slow motion with sound, jump to the next spike
+* switch camera angle or show the grid, and change the speed and the audio window
+* stamp **SPIKE · EDGE** / **NO SPIKE**
+* change the sensitivity, the replay sound, the HF view and the A/V sync
+
+Nothing runs on the phone except the picture and the buttons, and it never asks for sources. Start it with **Umpire view** in the top bar, which shows a QR code for the phones and how many are connected. When a CrickVision match is linked it starts by itself as soon as you press **Connect & start**.
+
+Keep the UltraEdge window visible on the laptop: browsers slow down tabs that are hidden or minimised.
+
+## CrickVision match
+
+Paste the match link or ID under **Setup sources → CrickVision match**, or open UltraEdge from the match's page on the CrickVision website (**Open UltraEdge studio for this match**). Then:
+
+* every EDGE / NO EDGE verdict, from the laptop or from an umpire phone, is saved to that ball of the match;
+* in the CrickVision app, the scoring screen's **UltraEdge** button opens the umpire view of this laptop for the match. There is nothing to scan or type.
+
+A verdict given on an umpire phone is saved against the ball that the app says is under review. A verdict given on the laptop is saved against the ball being scored at that moment.
+
 ## Calibrate A/V sync (once per setup)
 
 WebRTC, Bluetooth and a second phone each add a fixed delay. To measure it:
@@ -95,6 +127,15 @@ The misses are faint edges that sit less than about 10 dB above the crowd noise.
 * Live replay frames are buffered as JPEGs for 20 s at up to 960 px wide. Deliveries keep their own frames, and the last 40 are kept.
 * Real-world tuning: real stump-mic recordings have not been tested yet. If you get false spikes (for example the bat hitting the ground or a keeper's gloves), lower *Sensitivity*. If you miss faint edges, raise it and improve the mic placement.
 
+## Hosting
+
+UltraEdge is published with **GitHub Pages** from this repository (Settings → Pages → Deploy from branch `main`, folder `/`):
+
+* laptop: `https://mamakar333.github.io/UltraEdge-2.0/ultraedge.html`
+* umpire phones: `https://mamakar333.github.io/UltraEdge-2.0/remote.html` (the CrickVision app opens this page)
+
+Every push to `main` updates the laptop and the phones; the CrickVision app doesn't need a new release. `python3 serve.py` still works for local use.
+
 ## Files
 
 ```
@@ -105,8 +146,16 @@ js/ue/audio-engine.js    AudioContext, 60 s ring buffer, clock mapping
 js/ue/frame-buffer.js    timestamped video frames (requestVideoFrameCallback)
 js/ue/review.js          frame-by-frame replay, calibration, export
 js/ue/sources.js         local camera/mic, VDO.ninja receiver, phone links
-js/ue/app.js             wiring + UI
+js/ue/app.js             wiring + UI (studio: cameras, detection, replays)
+js/ue/broadcast.js       umpire view: composes the screen, publishes it, runs phone commands
+js/ue/link.js            studio ⇄ phone link over VDO.ninja (video + data channel)
+js/ue/host-bridge.js     CrickVision match: saves verdicts, talks to the Android app
+remote.html, js/ue/remote.js, css/remote.css   umpire phone page
 tests/                   synthetic audio, detector benchmark, headless-browser e2e
 ```
 
-Tests: `npm test` runs the detector benchmark (Node and ffmpeg). `npm run test:e2e` runs the whole app in headless Chromium with a fake camera and mic, including file mode, export and a mocked two-phone setup (Python Playwright).
+Tests:
+
+* `npm test` runs the detector benchmark (Node and ffmpeg).
+* `npm run test:e2e` runs the whole app in headless Chromium with a fake camera and mic, including file mode, export and a mocked two-phone setup (Python Playwright).
+* `npm run test:remote` runs a laptop with two cameras and an umpire phone. They are connected over real WebRTC, with VDO.ninja signalling mocked. The test drives every remote control and saves verdicts to a mocked CrickVision API.

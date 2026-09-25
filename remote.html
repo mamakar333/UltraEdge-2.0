@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>UltraEdge · Umpire</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/remote.css?v=3.1.0">
+<!-- VDO.ninja SDK: watch the laptop's UltraEdge screen and send it commands -->
+<script src="https://cdn.jsdelivr.net/gh/steveseguin/ninjasdk@latest/vdoninja-sdk.min.js" defer></script>
+</head>
+<body>
+<header class="bar">
+  <span class="logo">ULTRA<b>EDGE</b></span>
+  <span class="title" id="title">Umpire view</span>
+  <span class="conn" id="conn"><i></i><span>connecting</span></span>
+</header>
+
+<section class="stage" id="stage">
+  <video id="program" autoplay playsinline muted></video>
+  <div class="overlay" id="overlay">
+    <div class="spinner"></div>
+    <p id="overlayMsg">Connecting to the UltraEdge laptop…</p>
+    <p class="muted small" id="overlayHint"></p>
+  </div>
+  <button class="sound" id="btnSound" hidden>🔇 Tap for replay sound</button>
+</section>
+
+<!-- live mode -->
+<section class="panel" id="livePanel">
+  <button class="big primary" id="btnReviewLast">REVIEW LAST 3 s</button>
+  <div class="chips" id="camChips"></div>
+  <h3>Deliveries</h3>
+  <div class="list" id="deliveries"><p class="muted small">Spikes from the stump mic appear here. Tap one to review it.</p></div>
+  <details class="more">
+    <summary>Detection settings</summary>
+    <label class="row">Sensitivity <b id="sensVal">85</b><input type="range" id="sens" min="0" max="100" value="85"></label>
+    <label class="row tog"><input type="checkbox" id="autoReview"> Auto-open replay on spike</label>
+  </details>
+</section>
+
+<!-- review mode -->
+<section class="panel" id="reviewPanel" hidden>
+  <div class="rv-head"><b id="rvTitle">REVIEW</b><span class="muted small" id="rvFrame"></span></div>
+  <div class="chips" id="angleChips"></div>
+  <div class="transport">
+    <button id="rvBack5" aria-label="Back 5 frames">«</button>
+    <button id="rvPrev" aria-label="Previous frame">◀</button>
+    <button id="rvPlay" class="primary" aria-label="Play or pause">▶</button>
+    <button id="rvNext" aria-label="Next frame">▶︎</button>
+    <button id="rvFwd5" aria-label="Forward 5 frames">»</button>
+  </div>
+  <div class="row2">
+    <button id="rvHit">NEXT SPIKE</button>
+    <select id="rvSpeed" aria-label="Replay speed">
+      <option value="0.05">1/20×</option><option value="0.125">1/8×</option><option value="0.25">1/4×</option><option value="0.5">1/2×</option><option value="1">1×</option>
+    </select>
+  </div>
+  <label class="row">Audio window <b id="rvZoomVal">300 ms</b><input type="range" id="rvZoom" min="40" max="2000" step="10" value="300"></label>
+  <p class="info" id="rvInfo"></p>
+  <div class="verdict">
+    <button class="danger" id="rvEdge">SPIKE · EDGE</button>
+    <button class="ok" id="rvNoEdge">NO SPIKE</button>
+  </div>
+  <p class="saved" id="rvSaved"></p>
+  <details class="more">
+    <summary>More controls</summary>
+    <label class="row tog"><input type="checkbox" id="rvSoundTog" checked> Replay sound</label>
+    <label class="row tog"><input type="checkbox" id="rvHp" checked> HF view (high-passed trace)</label>
+    <label class="row">A/V sync <b id="rvOffsetVal">0 ms</b><input type="range" id="rvOffset" min="-300" max="300" step="1" value="0"></label>
+    <button id="rvSyncHere">Sync to this frame</button>
+  </details>
+  <button class="close" id="rvClose">✕ Back to live</button>
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="js/ue/remote.js?v=3.1.0"></script>
+</body>
+</html>

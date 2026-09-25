@@ -34,7 +34,11 @@ js/ue/frame-buffer.js     last N s of video as timestamped JPEG blobs (requestVi
 js/ue/review.js           ReviewPlayer (replay UI, sound, calibration, export), FrameSource classes
 js/ue/sources.js          local camera/mic, VDO.ninja receiver, phone push-link builder
 js/ue/waveform.js         canvas drawing helpers
-js/ue/app.js              glue: wiring, delivery grouping, file analysis, settings (localStorage "ue.*")
+js/ue/app.js              glue: up to 4 cameras, delivery grouping, file analysis, settings (localStorage "ue.*")
+js/ue/broadcast.js        umpire view: composes the laptop screen (1280×1000), publishes it, runs phone commands
+js/ue/link.js             StudioLink / RemoteLink over the VDO.ninja SDK (video + data channel), studioStreamId()
+js/ue/host-bridge.js      CrickVision match link: saves verdicts (POST …/edge-reviews), native-app bridge
+remote.html, js/ue/remote.js   umpire phone page: mirrors the studio and sends commands (no media capture)
 tests/                    synthetic audio generator, detector benchmark (Node), headless e2e (Playwright)
 serve.py                  no-cache local server:  python3 serve.py → http://localhost:8001/ultraedge.html
 index.html, live-mode.html, video-mode.html, js/*.js (outside js/ue)   OLD v2, not used by v3
@@ -162,6 +166,22 @@ These are exported from `sources.js`:
 - `new NinjaReceiver().connect(streamId, { audio, video })` resolves to a MediaStream. It needs the SDK script `https://cdn.jsdelivr.net/gh/steveseguin/ninjasdk@latest/vdoninja-sdk.min.js` on the page.
 - Chrome quirk: remote WebRTC audio only reaches Web Audio if the stream is also attached to a (muted) `<audio>` element. `app.js` does this through `keepAlive`.
 
+### 4.6 Studio ⇄ umpire phones (remote control)
+
+The laptop page (`ultraedge.html`) is the only place with media and logic. `StudioBroadcast` draws a 1280×1000 "program" canvas ~30×/s. It shows the review canvas while a replay is open, and the camera grid plus the live trace otherwise. The canvas is published with `canvas.captureStream()` plus the replay sound under the stream ID `studioStreamId(matchId || sessionKey)` = `uestudio` + the first 24 alphanumerics.
+
+`remote.html?matchId=…` (or `?studio=<sessionKey>`) views that stream and talks over the data channel:
+
+* phone → laptop `{ ue: 'cmd', cmd, ...args }`. `cmd` is one of: `hello`, `reviewLast`, `open{id}`, `close`, `step{n}`, `toggle`, `play`, `pause`, `hit{dir}`, `verdict{v, ball}`, `speed{v}`, `window{v}`, `angle{k}`, `grid{on}`, `sound{on}`, `hp{on}`, `offset{ms}`, `syncHere`, `sens{v}`, `auto{on}`, `layout{k}`.
+* laptop → phones `{ ue: 'state', s }` is sent on every change and every 2 s. It includes `running`, `match`, `cams`, `layout`, `sens`, `deliveries[]` and `review` (`ReviewPlayer.state()`).
+* laptop → phones `{ ue: 'event', type: 'verdict', saved, review, error }`.
+
+`remote.html` forwards verdict events to the Android app as `ultraedge:verdict` through `window.CrickVisionBridge`. `window.ultraedgeHost.handleBack()` closes the laptop's replay. To add a control, add a `cmd` case in `app.js → remoteCommand()` and a button in `remote.js`: the app picks it up with no change.
+
+### 4.7 Multi-camera sessions
+
+A live session has `angles: [{ name, frames, offsetMs }]` and `angle`. `session.frames` is always the active angle's frames, so older code keeps working. `ReviewPlayer.setAngle(k)` keeps the audio time. `setGrid(true)` draws every angle at the same audio instant. Offsets are per camera: `ue.offsetLive` for camera 1, and `ue.offsetLive1…3` for the others.
+
 ## 5. Integration options (pick one)
 
 | Option | How | When |
@@ -187,13 +207,14 @@ These are exported from `sources.js`:
 - **Memory:** about 12 MB of audio (60 s × 2 buffers), plus the JPEG frames (about 20 s × fps × 30–80 KB).
 - **Frame rate limits the visual precision, not the audio.** At 130 km/h the ball moves about 1.2 m per frame at 30 fps.
 - **Detection is heuristic.** It is tuned on synthetic audio: 91–100 % of contacts found and fewer than 0.2 false alarms a minute in the benchmarks. It is **not yet tuned on real match audio.** The replay trace is what the operator judges from.
-- **Settings keys** in localStorage: `ue.sens`, `ue.cfg`, `ue.autoReview`, `ue.offsetLive`, `ue.offsetFile`. Globals for debugging: `window.ultraedge` (app state) and `window.ultraedgeReview`.
+- **Settings keys** in localStorage: `ue.sens`, `ue.cfg` (v2: `{ cams:[{name, src, id, device}], mic:{src, id, device}, match }`), `ue.autoReview`, `ue.offsetLive`, `ue.offsetLive1…3`, `ue.offsetFile`, `ue.studioKey`. Globals for debugging: `window.ultraedge` (app state) and `window.ultraedgeReview`.
 
 ## 7. Verify you didn't break it
 
 ```bash
 npm test            # node tests/make-media.mjs && node tests/detector.test.mjs  → "PASS" (needs ffmpeg for Opus cases)
 npm run test:e2e    # python3 tests/e2e.py (Playwright + Chromium, fake cam/mic) → "OVERALL PASS"
+npm run test:remote # python3 tests/remote.e2e.py (laptop with 2 cameras + umpire phone over WebRTC) → "OVERALL PASS"
 ```
 
 ## 8. Status and next ideas
@@ -207,8 +228,10 @@ npm run test:e2e    # python3 tests/e2e.py (Playwright + Chromium, fake cam/mic)
   - video-file analysis
   - one- or two-phone setups
   - no-signal, dark-picture and portrait warnings
+  - up to 4 camera angles (grid and per-angle replay, per-camera sync)
+  - umpire view: phones mirror and control the laptop (CrickVision app opens it per match)
+  - CrickVision match link: verdicts saved against the ball
 - **Open:**
   - test with real phones and real stump-mic audio
-  - postMessage/iframe API (option A)
   - ball-position interpolation between frames
   - optional ML classifier on top of the hit features

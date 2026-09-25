@@ -108,7 +108,25 @@ button, input, select { font: inherit; }
 .drop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(31,182,255,.12); border: 3px dashed var(--accent); font: 700 32px "Barlow Condensed", sans-serif; z-index: 40; pointer-events: none; }
 .drop.on { display: flex; }
 
+/* multi-camera live view */
+.cam-grid { position: absolute; inset: 0; display: grid; gap: 2px; background: #000; }
+.cam-grid.n1 { grid-template-columns: 1fr; }
+.cam-grid.n2 { grid-template-columns: 1fr 1fr; }
+.cam-grid.n3, .cam-grid.n4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.cam-grid.focus { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.cam-grid.focus .cam-tile:not(.main) { display: none; }
+.cam-tile { position: relative; min-width: 0; min-height: 0; cursor: pointer; }
+.cam-tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+.cam-name { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; font: 700 13px "Barlow Condensed", sans-serif; padding: 2px 8px; border-radius: 4px; letter-spacing: .06em; }
+.cam-tile.main .cam-name { background: var(--yellow); color: #000; }
+/* setup: camera rows */
+.cam-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1.4fr) 26px; gap: 6px; align-items: center; margin: 6px 0; }
+.cam-row .num { font: 700 16px "Barlow Condensed", sans-serif; color: var(--accent); }
+.cam-row input, .cam-row select { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+.sheet.narrow { width: min(520px, 100%); }
 @media (max-width: 900px) {
   .grid { grid-template-columns: 1fr; }
   .cols { grid-template-columns: 1fr; }
 }
+/* linked CrickVision match */
+.cv-banner { padding: 6px 16px; background: #0b2233; border-bottom: 1px solid var(--line); color: #bfe6ff; font: 600 13px Inter, sans-serif; }

@@ -36,8 +36,8 @@ try:
 
         pg.click('#btnSetup')
         pg.wait_for_timeout(500)
-        pg.check('input[name=vsrc][value=local]')
-        pg.check('input[name=asrc][value=local]')
+        pg.select_option('.cam-row .cam-src', index=1)   # first computer camera
+        pg.select_option('#micSrc', 'local')
         pg.screenshot(path=f'{OUT}/02-setup.png')
         pg.click('#btnStart')
         pg.wait_for_function('window.ultraedge.running === true', timeout=15000)
@@ -159,7 +159,7 @@ try:
         pg2.route('**/qrcode.min.js', lambda r: r.fulfill(body='', content_type='text/javascript'))
         pg2.goto(f'http://localhost:{PORT}/ultraedge.html'); pg2.wait_for_timeout(1000)
         pg2.click('#btnSetup'); pg2.wait_for_timeout(300)
-        pg2.check('input[name=vsrc][value=phone]'); pg2.check('input[name=asrc][value=phone2]')
+        pg2.select_option('.cam-row .cam-src', 'phone'); pg2.select_option('#micSrc', 'phone')
         pg2.wait_for_timeout(300)
         link = pg2.evaluate("document.getElementById('linkCam').textContent")
         check('push=' in link and 'proaudio' in link and 'aec=0' in link, f'phone push link generated: {link}')

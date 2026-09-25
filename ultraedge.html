@@ -6,25 +6,27 @@
 <title>UltraEdge 3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/ultraedge.css?v=3.0.0">
+<link rel="stylesheet" href="css/ultraedge.css?v=3.1.0">
 <!-- VDO.ninja SDK: receive phone camera/mic as a real MediaStream -->
 <script src="https://cdn.jsdelivr.net/gh/steveseguin/ninjasdk@latest/vdoninja-sdk.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="logo">ULTRA<b>EDGE</b></span><span class="ver">3.0</span></div>
+  <div class="brand"><span class="logo">ULTRA<b>EDGE</b></span><span class="ver">3.1</span></div>
   <div class="pills">
     <span class="pill" id="pillState"><i class="dot"></i><span>IDLE</span></span>
     <span class="pill" id="pillVideo">VIDEO —</span>
     <span class="pill" id="pillAudio">AUDIO —</span>
     <span class="pill" id="pillBuf">BUFFER —</span>
+    <span class="pill" id="pillUmpire" title="Umpire phones watching this screen">UMPIRE VIEW —</span>
   </div>
   <div class="actions">
     <button class="btn ghost" id="btnFile">Analyse video file</button>
     <input type="file" id="fileInput" accept="video/*,audio/*" hidden>
     <button class="btn" id="btnSetup">Setup sources</button>
     <button class="btn ghost" id="btnStop" hidden>Stop</button>
+    <button class="btn ghost" id="btnUmpire" title="Let umpire phones see and control this screen">Umpire view</button>
     <a class="btn ghost" href="index.html">Old version</a>
   </div>
 </header>
@@ -33,7 +35,9 @@
   <section class="panel video-panel">
     <div class="panel-h"><span>CAMERA</span><span class="muted" id="videoInfo">no camera</span></div>
     <div class="video-wrap">
-      <video id="liveVideo" autoplay playsinline muted></video>
+      <div class="cam-grid n1" id="camGrid">
+        <div class="cam-tile" data-k="0"><video id="liveVideo" autoplay playsinline muted></video><span class="cam-name" hidden></span></div>
+      </div>
       <div class="live-badge" id="liveBadge">LIVE</div>
       <div class="spike-flash" id="spikeFlash">SPIKE</div>
       <div class="video-warn" id="videoWarn"></div>
@@ -80,37 +84,50 @@
     <div class="sheet-h"><h2>Sources</h2><button class="x" id="setupClose">✕</button></div>
     <div class="cols">
       <div class="col">
-        <h3>1 · Camera (side-on to the batter)</h3>
-        <label class="radio"><input type="radio" name="vsrc" value="phone" checked> Phone camera (via VDO.ninja)</label>
-        <label class="radio"><input type="radio" name="vsrc" value="local"> This computer's camera</label>
-        <select id="camSelect" class="sel"></select>
-        <label class="radio"><input type="radio" name="vsrc" value="none"> No camera (audio only)</label>
+        <h3>1 · Cameras <span class="muted small">(up to 4 angles, all synced to the stump mic)</span></h3>
+        <div id="camRows"></div>
+        <button class="btn tiny ghost" id="btnAddCam">+ Add camera</button>
 
-        <h3>2 · Microphone (at the stumps)</h3>
-        <label class="radio"><input type="radio" name="asrc" value="same" checked> Same phone as the camera</label>
-        <label class="radio"><input type="radio" name="asrc" value="phone2"> A second phone at the stumps</label>
-        <label class="radio"><input type="radio" name="asrc" value="local"> This computer's microphone / USB mic</label>
+        <h3>2 · Stump microphone</h3>
+        <select id="micSrc" class="sel">
+          <option value="cam">Camera 1 phone's microphone</option>
+          <option value="phone">A separate phone at the stumps</option>
+          <option value="local">This computer's microphone / USB mic</option>
+        </select>
         <select id="micSelect" class="sel"></select>
         <p class="muted small">Voice processing (echo cancel, noise suppression, auto-gain) is switched off everywhere — it erases edge clicks.</p>
+
+        <h3>3 · CrickVision match <span class="muted small">(optional)</span></h3>
+        <input id="matchRef" class="sel" placeholder="Paste the match link or match ID" autocomplete="off">
+        <p class="muted small" id="matchInfo">Link a match to save every verdict to its scorecard. Umpire phones on that match then see and control this screen.</p>
       </div>
       <div class="col" id="phoneCol">
         <h3>Phone links</h3>
-        <div class="phone" id="phoneCam">
-          <div class="phone-h">Camera phone · stream ID <input id="camId" class="id"></div>
-          <div class="qr" id="qrCam"></div>
-          <div class="link"><code id="linkCam"></code><button class="btn tiny" data-copy="linkCam">Copy</button></div>
-        </div>
-        <div class="phone" id="phoneMic">
-          <div class="phone-h">Stump-mic phone · stream ID <input id="micId" class="id"></div>
-          <div class="qr" id="qrMic"></div>
-          <div class="link"><code id="linkMic"></code><button class="btn tiny" data-copy="linkMic">Copy</button></div>
-        </div>
+        <div id="phoneLinks"></div>
         <p class="muted small">Scan the QR on the phone (any network with internet). Allow camera/mic, choose the rear camera, lock the screen rotation. Keep the phone screen on.</p>
       </div>
     </div>
     <div class="sheet-f">
       <span class="muted small" id="setupMsg"></span>
       <button class="btn big primary" id="btnStart">Connect &amp; start</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ UMPIRE VIEW ============================ -->
+<div class="modal" id="umpireSheet">
+  <div class="sheet narrow">
+    <div class="sheet-h"><h2>Umpire view</h2><button class="x" id="umpireClose">✕</button></div>
+    <div class="pad">
+      <p class="small">Umpire phones see exactly this screen, live, and can drive it: review the last 3 s, step frames, switch camera angles and give the EDGE / NO EDGE verdict. Everything still runs on this computer.</p>
+      <p class="small" id="umpireHow"></p>
+      <div class="qr" id="qrUmpire"></div>
+      <div class="link"><code id="linkUmpire"></code><button class="btn tiny" data-copy="linkUmpire">Copy</button></div>
+      <p class="small"><b id="umpireState">Off</b></p>
+    </div>
+    <div class="sheet-f">
+      <span class="muted small">Keep this window visible: browsers slow down hidden tabs.</span>
+      <button class="btn big primary" id="btnUmpireToggle">Start umpire view</button>
     </div>
   </div>
 </div>
@@ -138,6 +155,7 @@
       <label class="tog"><input type="checkbox" id="rvSound" checked> Sound</label>
       <button class="btn" id="rvHit" title="H">NEXT SPIKE</button>
     </div>
+    <div class="grp" id="rvAngles" hidden></div>
     <div class="grp">
       <label>Window <b id="rvZoomVal">300 ms</b><input type="range" id="rvZoom" min="40" max="2000" step="10" value="300"></label>
       <label>Gain<input type="range" id="rvGain" min="-2" max="4" step="0.25" value="0"></label>
@@ -155,6 +173,6 @@
 
 <div class="drop" id="drop">Drop video to analyse</div>
 
-<script type="module" src="js/ue/app.js?v=3.0.0"></script>
+<script type="module" src="js/ue/app.js?v=3.1.0"></script>
 </body>
 </html>
