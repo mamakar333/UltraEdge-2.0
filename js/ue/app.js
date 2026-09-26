@@ -131,6 +131,8 @@ function renderCamGrid() {
         name.hidden = app.cams.length < 2;
         if (app.cams[k]) name.textContent = `${k + 1} · ${app.cams[k].name}`;
     });
+    // tile sizes changed: re-fit rotated videos
+    requestAnimationFrame(() => app.cams.forEach(c => c && c.rotation && fitRotatedVideo(c)));
     schedulePush();
 }
 
@@ -150,18 +152,55 @@ function addCam(k, name, videoStream) {
     tile.onclick = () => setLayout(app.liveLayout === k ? -1 : k);
     const v = tile.querySelector('video');
     const frames = new FrameBuffer({ seconds: 20, maxWidth: 960 });
-    const cam = { name, video: v, tile, frames };
+    const cam = { name, video: v, tile, frames, rotation: 0 };
     app.cams[k] = cam;
+    // ⟳ straightens a sideways picture (remembered per camera slot)
+    let rb = tile.querySelector('.cam-rotate');
+    if (!rb) {
+        rb = document.createElement('button');
+        rb.className = 'cam-rotate'; rb.type = 'button';
+        rb.title = 'Rotate this camera 90°'; rb.setAttribute('aria-label', `Rotate camera ${k + 1}`);
+        rb.textContent = '⟳';
+        tile.appendChild(rb);
+    }
+    rb.onclick = (e) => { e.stopPropagation(); setRotation(cam, k, (cam.rotation + 90) % 360); };
+    setRotation(cam, k, store.get(`rot${k}`, 0), false);
     v.srcObject = new MediaStream(videoStream.getVideoTracks());
     v.play().catch(() => { });
     frames.attach(v);
     return cam;
 }
 
+/** Rotate a camera's live view, its recorded frames and the umpire broadcast. */
+function setRotation(cam, k, deg, save = true) {
+    cam.rotation = ((+deg || 0) % 360 + 360) % 360;
+    cam.frames.rotation = cam.rotation;
+    if (save) { store.set(`rot${k}`, cam.rotation); cam.frames.clear(); }   // don't mix old and new orientation in a replay
+    fitRotatedVideo(cam);
+    const rb = cam.tile.querySelector('.cam-rotate');
+    if (rb) rb.dataset.deg = cam.rotation;
+    schedulePush();
+}
+
+/** CSS rotation for the live <video>: 90°/270° need the element's box swapped to fill the tile. */
+function fitRotatedVideo(cam) {
+    const v = cam.video, t = cam.tile, rot = cam.rotation || 0;
+    if (!rot) { v.style.cssText = ''; return; }
+    const side = rot === 90 || rot === 270;
+    const W = t.clientWidth, H = t.clientHeight;
+    v.style.cssText = `position:absolute;left:50%;top:50%;object-fit:contain;` +
+        `width:${side ? H : W}px;height:${side ? W : H}px;transform:translate(-50%,-50%) rotate(${rot}deg);`;
+}
+if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => app.cams.forEach(c => c && c.rotation && fitRotatedVideo(c))).observe($('camGrid'));
+}
+
 async function stopAll() {
     app.running = false;
     for (const c of app.cams) { c.frames.detach(); c.video.srcObject = null; }
     $('camGrid').querySelectorAll('.cam-tile:not([data-k="0"])').forEach(t => t.remove());
+    $('camGrid').querySelectorAll('.cam-rotate').forEach(b => b.remove());
+    $('liveVideo').style.cssText = '';
     app.cams = [];
     app.liveLayout = -1;
     renderCamGrid();
@@ -428,7 +467,9 @@ setInterval(() => {
                 const luma = sum / (px.length / 4);
                 if (luma < 22) msg = who + `Picture is very dark (brightness ${luma.toFixed(0)}/255) — lens covered, pointing at the ground, or too little light?`;
             } catch { }
-            if (!msg && v.videoHeight > v.videoWidth) msg = who + 'Portrait video — turn the camera phone sideways (landscape) for a side-on view of the bat.';
+            const side = c.rotation === 90 || c.rotation === 270;
+            const portrait = side ? v.videoWidth > v.videoHeight : v.videoHeight > v.videoWidth;
+            if (!msg && portrait) msg = who + 'Picture is upright/portrait. If the phone is held sideways, tap ⟳ on the video to straighten it; otherwise turn the phone sideways for a side-on view of the bat.';
         }
     });
     warn.textContent = msg;
@@ -528,11 +569,19 @@ async function analyseFile(file) {
 // ---------------------------------------------------------------------------
 // Umpire view: publish this screen, let umpire phones drive it
 // ---------------------------------------------------------------------------
-function fitDraw(ctx, img, x, y, w, h) {
-    const iw = img.videoWidth || img.width, ih = img.videoHeight || img.height;
-    if (!iw || !ih) return false;
+function fitDraw(ctx, img, x, y, w, h, rotation = 0) {
+    const iw0 = img.videoWidth || img.width, ih0 = img.videoHeight || img.height;
+    if (!iw0 || !ih0) return false;
+    const rot = ((rotation % 360) + 360) % 360, side = rot === 90 || rot === 270;
+    const iw = side ? ih0 : iw0, ih = side ? iw0 : ih0;          // size as shown
     const sc = Math.min(w / iw, h / ih), dw = iw * sc, dh = ih * sc;
-    ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+    if (!rot) { ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh); return true; }
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+    ctx.rotate(rot * Math.PI / 180);
+    const sw = side ? dh : dw, sh = side ? dw : dh;
+    ctx.drawImage(img, -sw / 2, -sh / 2, sw, sh);
+    ctx.restore();
     return true;
 }
 
@@ -554,7 +603,7 @@ function drawProgramLive(ctx, r) {
         const n = show.length, cols = n <= 2 ? n : 2, rows = Math.ceil(n / cols), cw = r.w / cols, ch = VH / rows;
         show.forEach((k, i) => {
             const x = r.x + (i % cols) * cw, y = r.y + Math.floor(i / cols) * ch;
-            fitDraw(ctx, cams[k].video, x + 1, y + 1, cw - 2, ch - 2);
+            fitDraw(ctx, cams[k].video, x + 1, y + 1, cw - 2, ch - 2, cams[k].rotation || 0);
             if (cams.length > 1) badge(ctx, `${k + 1} · ${cams[k].name}`, x + 10, y + ch - 42, k === app.liveLayout ? '#ffd21a' : 'rgba(0,0,0,0.6)', k === app.liveLayout ? '#000' : '#fff', 20);
         });
     } else {

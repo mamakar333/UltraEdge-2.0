@@ -115,7 +115,16 @@ button, input, select { font: inherit; }
 .cam-grid.n3, .cam-grid.n4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
 .cam-grid.focus { grid-template-columns: 1fr; grid-template-rows: 1fr; }
 .cam-grid.focus .cam-tile:not(.main) { display: none; }
-.cam-tile { position: relative; min-width: 0; min-height: 0; cursor: pointer; }
+.cam-tile { position: relative; min-width: 0; min-height: 0; cursor: pointer; overflow: hidden; }
+.cam-rotate {
+  position: absolute; top: 8px; right: 8px; z-index: 3; width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.55); color: #fff; font-size: 22px; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.cam-rotate:hover { background: rgba(0,0,0,0.8); border-color: var(--yellow); }
+.cam-rotate[data-deg]:not([data-deg="0"])::after {
+  content: attr(data-deg) "°"; position: absolute; bottom: -18px; font-size: 11px; color: var(--yellow); white-space: nowrap;
+}
 .cam-tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
 .cam-name { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; font: 700 13px "Barlow Condensed", sans-serif; padding: 2px 8px; border-radius: 4px; letter-spacing: .06em; }
 .cam-tile.main .cam-name { background: var(--yellow); color: #000; }

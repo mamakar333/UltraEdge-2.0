@@ -11,6 +11,9 @@ export class FrameBuffer {
         this.maxWidth = maxWidth;
         this.quality = quality;
         this.frames = [];          // {t, blob, w, h}
+        /** Clockwise rotation (0/90/180/270) applied to stored frames: a phone held sideways with its
+         *  screen rotation locked still sends portrait frames, so the operator straightens them here. */
+        this.rotation = 0;
         this.video = null;
         this.running = false;
         this.fps = 0;
@@ -68,13 +71,26 @@ export class FrameBuffer {
         this.fps = this._fpsWin.length;
 
         if (this._inflight > 6) { this.dropped++; return; }  // encoder can't keep up
-        const scale = Math.min(1, this.maxWidth / v.videoWidth);
-        const w = Math.round(v.videoWidth * scale), h = Math.round(v.videoHeight * scale);
+        const rot = ((this.rotation % 360) + 360) % 360, side = rot === 90 || rot === 270;
+        const vw = side ? v.videoHeight : v.videoWidth, vh = side ? v.videoWidth : v.videoHeight;
+        const scale = Math.min(1, this.maxWidth / vw);
+        const w = Math.round(vw * scale), h = Math.round(vh * scale);
         if (!this._canvas || this._canvas.width !== w || this._canvas.height !== h) {
             this._canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
             this._ctx = this._canvas.getContext('2d', { alpha: false });
         }
-        this._ctx.drawImage(v, 0, 0, w, h);
+        if (rot) {
+            const c = this._ctx;
+            c.save();
+            c.translate(w / 2, h / 2);
+            c.rotate(rot * Math.PI / 180);
+            // in the rotated frame the source is drawn at its own (unswapped) size
+            const sw = side ? h : w, sh = side ? w : h;
+            c.drawImage(v, -sw / 2, -sh / 2, sw, sh);
+            c.restore();
+        } else {
+            this._ctx.drawImage(v, 0, 0, w, h);
+        }
         const entry = { t, blob: null, w, h };
         this.frames.push(entry);
         this._inflight++;

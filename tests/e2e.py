@@ -122,6 +122,21 @@ try:
         print('   live video after closing replay:', lv)
         check(not lv['paused'] and lv['adv'] > 0.3 and lv['h'] > 100 and lv['h'] <= lv['w'], 'live video keeps playing and stays in its 16:9 box after closing the replay')
 
+        # ⟳ rotate: a sideways phone picture is straightened in the live view and in the recorded frames
+        pg.click('.cam-tile[data-k="0"] .cam-rotate'); pg.wait_for_timeout(1200)
+        rot = pg.evaluate('''() => { const a = window.ultraedge, c = a.cams[0], f = c.frames.frames.filter(x => x.blob).slice(-1)[0];
+            const v = c.video, tr = c.tile.getBoundingClientRect(), vr = v.getBoundingClientRect();
+            return { rotation: c.rotation, fw: f && f.w, fh: f && f.h, transform: v.style.transform,
+                     inside: vr.left >= tr.left - 2 && vr.right <= tr.right + 2 && vr.top >= tr.top - 2 && vr.bottom <= tr.bottom + 2,
+                     vw: vr.width, vh: vr.height, saved: localStorage.getItem('ue3.rot0') || localStorage.getItem('rot0') } }''')
+        print('   rotate:', rot)
+        check(rot['rotation'] == 90 and 'rotate(90deg)' in rot['transform'], 'rotate button turns the live picture 90°')
+        check(rot['fw'] and rot['fh'] and rot['fh'] > rot['fw'], 'recorded replay frames are stored rotated (portrait from a 16:9 source)')
+        check(rot['inside'] and rot['vh'] > 100, 'rotated live picture fits inside its tile')
+        for _ in range(3): pg.click('.cam-tile[data-k="0"] .cam-rotate'); pg.wait_for_timeout(150)
+        back = pg.evaluate("() => ({ r: window.ultraedge.cams[0].rotation, css: window.ultraedge.cams[0].video.style.cssText })")
+        check(back['r'] == 0 and back['css'] == '', 'four taps bring the picture back to normal')
+
         # file analysis path
         pg.click('#btnStop'); pg.wait_for_timeout(500)
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', f'{MEDIA}/cam.y4m', '-i', f'{MEDIA}/scene.wav', '-t', '12', '-c:v', 'libvpx', '-b:v', '1M', '-c:a', 'libopus', '-b:a', '128k', f'{OUT}/match.webm'], check=True)
