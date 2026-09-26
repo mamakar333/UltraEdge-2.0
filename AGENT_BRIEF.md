@@ -84,7 +84,12 @@ These are the parameters (`DEFAULT_PARAMS`):
 | `hpfHz` | 2500 | High-pass corner, in Hz, of the signal the detector looks at. |
 | `riseDb` | 12 | Minimum jump above the level 3–12 ms earlier (sharp-attack test). |
 | `decayDropDb` / `maxDecayMs` | 12 dB / 30 ms | The spike must fall by 12 dB within 30 ms (short-impulse test). |
-| `tailDropDb` | 16 | Median level 8–40 ms after the peak must be this far below the peak (no sustained tail). |
+| `tailDropDb` | 20 | Median level 8–40 ms after the peak must be this far below the peak (no sustained tail; claps ring longer than an edge). |
+| `voiceFilter` | true | Rejects a click if someone is talking around it (the laptop's and phone's **Ignore voices** switch). |
+| `voiceWindowMs` | 150 | How far, in ms, before and after the click to look for a voice. |
+| `voiceMinMs` | 20 | A voice must be steady (within 6 dB) and pitched for at least this long. |
+| `voiceCorr` | 0.55 | Minimum normalized autocorrelation at the pitch lag (70–400 Hz) for a 30 ms frame to count as voiced. |
+| `voiceLoHz` / `voiceHiHz` | 250 / 1200 | Band, in Hz, the voice check listens to (above wind rumble, below the edge band). |
 | `thudRatioDb` | 18 | Rejects the candidate if the band below 700 Hz jumps at the same moment and is this much louder (ball on pad). |
 | `absFloorDb` | -62 | Ignore anything quieter than this, in dBFS. |
 | `refractoryMs` | 25 | Minimum gap, in ms, between two reported spikes. |

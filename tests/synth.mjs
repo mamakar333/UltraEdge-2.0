@@ -136,3 +136,124 @@ export function scene(fs, seconds, seed, opts = {}) {
     for (let i = 0; i < len; i++) x[i] = Math.max(-1, Math.min(1, x[i]));
     return { x, truth, distractors };
 }
+
+// ---------------------------------------------------------------------------
+// Harder distractors (a talking room, a TV, appeals) for the voice filter.
+
+/** Speech closer to the real thing: plosive bursts are as sharp as an edge (1–4 ms, broadband, loud),
+ *  aspiration is weak, and voicing (the vowel) starts 10–80 ms after the burst. */
+export function realSpeech(fs, r, dur = U(r, 0.8, 2.5), amp = U(r, 0.1, 0.6)) {
+    const len = Math.round(fs * dur), x = new Float32Array(len);
+    let pos = 0;
+    while (pos < len - fs * 0.12) {
+        const kind = r();
+        if (kind < 0.55) {                       // plosive t / k / p / ch
+            pos += Math.round(fs * U(r, 0.03, 0.07));                 // closure (silence)
+            const bl = Math.round(fs * U(r, 0.001, 0.004));
+            const burstA = U(r, 0.6, 1.4);
+            const b = new Float32Array(bl + Math.round(fs * 0.02));
+            for (let i = 0; i < b.length; i++) b[i] = gauss(r) * (i < bl ? burstA : burstA * 0.15 * Math.exp(-(i - bl) / fs / 0.006));
+            onePoleHP(b, fs, U(r, 1500, 3500));
+            for (let i = 0; i < b.length && pos + i < len; i++) x[pos + i] += b[i];
+            pos += bl + Math.round(fs * U(r, 0.01, 0.08));              // voice onset time
+        } else if (kind < 0.75) {                // fricative s / sh / f
+            const fl = Math.round(fs * U(r, 0.05, 0.14)), ramp = Math.round(fs * U(r, 0.004, 0.015));
+            const n = new Float32Array(fl); for (let i = 0; i < fl; i++) n[i] = gauss(r);
+            onePoleHP(n, fs, U(r, 2500, 5000));
+            for (let i = 0; i < fl && pos + i < len; i++) { const e = Math.min(1, i / ramp, (fl - i) / ramp); x[pos + i] += n[i] * e * 0.5; }
+            pos += fl;
+        }
+        pos += vowel(fs, r, x, pos, len, U(r, 0.08, 0.28));
+        pos += Math.round(fs * U(r, 0.0, 0.1));
+    }
+    return norm(x, amp);
+}
+
+function vowel(fs, r, x, pos, len, secs, f0 = U(r, 90, 260), gain = 0.3) {
+    const sl = Math.round(fs * secs);
+    const F1 = U(r, 300, 850), F2 = U(r, 900, 2500), F3 = U(r, 2400, 3400);
+    const ramp = Math.round(fs * U(r, 0.008, 0.03)), vib = U(r, 0, 0.04);
+    let ph = 0;
+    for (let i = 0; i < sl && pos + i < len; i++) {
+        const t = i / fs, e = Math.min(1, i / ramp, (sl - i) / ramp);
+        const f = f0 * (1 + vib * Math.sin(2 * Math.PI * 5 * t) - 0.1 * t);
+        ph += 2 * Math.PI * f / fs;
+        let v = 0;
+        for (let h = 1; h * f < 7500; h++) {
+            const fh = h * f;
+            const g = 1 / (1 + ((fh - F1) / 120) ** 2) + 0.5 / (1 + ((fh - F2) / 180) ** 2) + 0.3 / (1 + ((fh - F3) / 250) ** 2);
+            v += g * Math.sin(h * ph) / Math.sqrt(h);
+        }
+        x[pos + i] += v * e * gain;
+    }
+    return sl;
+}
+
+/** A fielder's appeal ("HOWZAT!"): loud, breathy /h/ then long shouted vowels. */
+export function appeal(fs, r, amp = U(r, 0.4, 0.95)) {
+    const len = Math.round(fs * U(r, 0.7, 1.2)), x = new Float32Array(len);
+    let pos = 0;
+    const hl = Math.round(fs * U(r, 0.03, 0.08));
+    for (let i = 0; i < hl; i++) x[i] += gauss(r) * 0.25 * (i / hl);
+    pos += hl;
+    pos += vowel(fs, r, x, pos, len, U(r, 0.2, 0.35), U(r, 180, 380), 0.45);
+    // "z/t" — a sharp stop in the middle
+    pos += Math.round(fs * 0.04);
+    for (let i = 0; i < Math.round(fs * 0.003) && pos + i < len; i++) x[pos + i] += gauss(r) * 1.2;
+    pos += Math.round(fs * 0.02);
+    vowel(fs, r, x, pos, len, U(r, 0.25, 0.45), U(r, 200, 420), 0.45);
+    return norm(x, amp);
+}
+
+/** Hand clap: broadband slap (mid and high frequencies) with a short room tail. */
+export function clap(fs, r, amp = U(r, 0.2, 0.7)) {
+    const len = Math.round(fs * 0.25), x = new Float32Array(len);
+    const bl = Math.round(fs * U(r, 0.002, 0.006)), tail = U(r, 0.02, 0.07);
+    for (let i = 0; i < len; i++) x[i] = gauss(r) * (i < bl ? 1 : 0.35 * Math.exp(-(i - bl) / fs / tail));
+    const lp = x.slice(); onePoleLP(lp, fs, 1800);
+    for (let i = 0; i < len; i++) x[i] = 0.6 * x[i] + 1.4 * lp[i];      // claps are strong around 1–2 kHz
+    return norm(x, amp);
+}
+
+/** TV / music: plucked and struck notes with harmonics (sharp attacks, tonal decays). */
+export function music(fs, r, dur = U(r, 1.5, 3.5), amp = U(r, 0.05, 0.3)) {
+    const len = Math.round(fs * dur), x = new Float32Array(len);
+    let t = 0;
+    while (t < dur - 0.2) {
+        const at = Math.round(t * fs), f0 = 110 * Math.pow(2, Math.floor(U(r, 0, 30)) / 12), tau = U(r, 0.15, 0.6);
+        const nl = Math.min(len - at, Math.round(fs * tau * 4));
+        for (let i = 0; i < nl; i++) {
+            const tt = i / fs; let v = 0;
+            for (let h = 1; h <= 8 && h * f0 < 9000; h++) v += Math.exp(-tt * h / tau) * Math.sin(2 * Math.PI * h * f0 * tt) / h;
+            x[at + i] += v * Math.min(1, i / (fs * 0.001));
+        }
+        t += U(r, 0.12, 0.5);
+    }
+    return norm(x, amp);
+}
+
+/** A room like the one at home: people talking, TV music, claps and appeals among real contacts. */
+export function hardScene(fs, seconds, seed, opts = {}) {
+    const r = rng(seed);
+    const len = Math.round(fs * seconds);
+    const x = noiseBed(fs, len, r, { crowdDb: -50, windDb: -40, ...opts });
+    const truth = [], distractors = [];
+    let t = 0.8;
+    while (t < seconds - 1.5) {
+        const k = r(), at = Math.round(t * fs);
+        if (k < 0.12) { mixAt(x, batHit(fs, r), at); truth.push({ sample: at, kind: 'bat' }); }
+        else if (k < 0.24) {
+            // edge, then the appeal 0.15–0.6 s later (must still count the edge)
+            mixAt(x, edgeHit(fs, r, U(r, 0.04, 0.1)), at); truth.push({ sample: at, kind: 'edge' });
+            if (r() < 0.6) { const a = appeal(fs, r), d = at + Math.round(fs * U(r, 0.15, 0.6)); mixAt(x, a, d); distractors.push({ sample: d, kind: 'appeal', len: a.length }); t += 0.6 + a.length / fs; }
+        }
+        else if (k < 0.62) { const s = realSpeech(fs, r); mixAt(x, s, at); distractors.push({ sample: at, kind: 'speech', len: s.length }); t += s.length / fs; }
+        else if (k < 0.72) { const a = appeal(fs, r); mixAt(x, a, at); distractors.push({ sample: at, kind: 'appeal', len: a.length }); t += a.length / fs; }
+        else if (k < 0.82) { mixAt(x, clap(fs, r), at); distractors.push({ sample: at, kind: 'clap', len: Math.round(fs * 0.25) }); }
+        else if (k < 0.92) { const m = music(fs, r); mixAt(x, m, at); distractors.push({ sample: at, kind: 'tv-music', len: m.length }); t += m.length / fs; }
+        else { mixAt(x, thud(fs, r), at); distractors.push({ sample: at, kind: 'thud' }); }
+        t += U(r, 0.4, 1.0);
+    }
+    for (let i = 0; i < len; i++) x[i] = Math.max(-1, Math.min(1, x[i]));
+    return { x, truth, distractors };
+}

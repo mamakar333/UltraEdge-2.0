@@ -111,6 +111,7 @@ function render(s) {
     $('deliveries').querySelectorAll('button[data-id]').forEach(b => b.onclick = () => cmd('open', { id: b.dataset.id }));
     if (document.activeElement !== $('sens')) { $('sens').value = s.sens; $('sensVal').textContent = s.sens; }
     $('autoReview').checked = !!s.autoReview;
+    if (s.voiceFilter !== undefined) $('ignoreVoice').checked = !!s.voiceFilter;
 
     // review
     if (rv.open) {
@@ -167,6 +168,7 @@ function bind() {
     $('sens').oninput = (e) => { $('sensVal').textContent = e.target.value; };
     $('sens').onchange = (e) => cmd('sens', { v: +e.target.value });
     $('autoReview').onchange = (e) => cmd('auto', { on: e.target.checked });
+    $('ignoreVoice').onchange = (e) => cmd('voice', { on: e.target.checked });
     $('rvPrev').onclick = () => cmd('step', { n: -1 });
     $('rvNext').onclick = () => cmd('step', { n: 1 });
     $('rvBack5').onclick = () => cmd('step', { n: -5 });

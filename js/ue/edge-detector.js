@@ -14,7 +14,12 @@
  *        - rise:  ≥ riseDb louder than the 3–10 ms before it (sharp attack)
  *        - decay: falls by decayDropDb within maxDecayMs (short, no sustain)
  *      Speech plosives / claps-with-reverb / scraping sounds fail one of these.
- *   6. The exact onset sample is refined from a sample ring buffer, so the
+ *   6. Voice filter: a speech consonant (t, k, p, ch) is as sharp as an edge, but it always sits
+ *      next to a vowel, and vowels are *pitched* (the vocal folds vibrate at 70–400 Hz). The
+ *      250–1200 Hz band (vowel harmonics, above wind) is kept at ~4 kHz and checked for that pitch 150 ms either side of the
+ *      click; if voice is found the click is rejected as speech. An appeal shouted after an
+ *      edge starts later than that, so it doesn't hide the edge.
+ *   7. The exact onset sample is refined from a sample ring buffer, so the
  *      reported time is accurate to ~0.1 ms regardless of the 1 ms envelope.
  */
 
@@ -52,9 +57,15 @@ export const DEFAULT_PARAMS = {
     maxDecayMs: 30,      // … within this time
     absFloorDb: -62,     // ignore anything quieter than this (dBFS)
     refractoryMs: 25,    // min gap between two reported contacts
-    tailDropDb: 16,      // median level 8–40 ms after peak must be this far below peak
+    tailDropDb: 20,      // median level 8–40 ms after peak must be this far below peak (claps ring longer)
     thudRatioDb: 18,     // reject if low band (<700 Hz) jumps and dwarfs the HF band by this much
     floorTauMs: 400,     // noise-floor time constant (rise); falls 4× faster
+    voiceFilter: true,   // reject clicks that sit inside speech (pitched voice around them)
+    voiceWindowMs: 150,  // look for voice this far before and after the click
+    voiceMinMs: 20,      // … steady (within 6 dB) for at least this long, with 2+ harmonics (a pad thud has one)
+    voiceCorr: 0.55,     // pitch strength needed (normalised autocorrelation)
+    voiceLoHz: 250,      // voice band: above wind rumble / pad thuds, where vowel harmonics live
+    voiceHiHz: 1200,
 };
 
 export class EdgeDetector {
@@ -63,6 +74,13 @@ export class EdgeDetector {
         this.tick = Math.max(8, Math.round(sampleRate / 1000)); // samples per 1 ms
         this.params = { ...DEFAULT_PARAMS };
         this.hp1 = new Biquad(); this.hp2 = new Biquad(); this.lp = new Biquad();
+        // voice band (100–1000 Hz), decimated to ~4 kHz for the pitch check
+        this.vb = [new Biquad(), new Biquad(), new Biquad(), new Biquad()];
+        this.vDec = Math.max(1, Math.round(sampleRate / 4000));
+        this.vFs = sampleRate / this.vDec;
+        this.vRingSize = 1 << 12;     // ~1 s
+        this.vRing = new Float32Array(this.vRingSize);
+        this.vCount = 0; this.vPhase = 0;
         this.setParams(params);
 
         // 1 ms envelope history (dB)
@@ -74,7 +92,7 @@ export class EdgeDetector {
         this.tickPeak = 0; this.tickFill = 0;
 
         // high-passed sample history for onset refinement
-        this.ringSize = 1 << 13;      // ~170 ms @ 48k
+        this.ringSize = 1 << 15;      // ~680 ms @ 48k (the voice check delays the decision ~200 ms)
         this.ring = new Float32Array(this.ringSize);
         this.sampleCount = 0;         // absolute index of next sample
 
@@ -94,6 +112,10 @@ export class EdgeDetector {
         this.hp1.highpass(this.fs, this.params.hpfHz, 0.5412);  // Butterworth 4th order
         this.hp2.highpass(this.fs, this.params.hpfHz, 1.3066);
         this.lp.lowpass(this.fs, 700, 0.7071);
+        this.vb[0].highpass(this.fs, this.params.voiceLoHz, 0.5412);
+        this.vb[1].highpass(this.fs, this.params.voiceLoHz, 1.3066);
+        this.vb[2].lowpass(this.fs, this.params.voiceHiHz, 0.5412);
+        this.vb[3].lowpass(this.fs, this.params.voiceHiHz, 1.3066);
         this.floorAlphaUp = 1 / Math.max(1, this.params.floorTauMs);
         this.floorAlphaDown = 1 / Math.max(1, this.params.floorTauMs / 4);
     }
@@ -117,6 +139,8 @@ export class EdgeDetector {
             if (a > this.tickPeak) this.tickPeak = a;
             const l = this.lp.step(input[i]), la = l < 0 ? -l : l;
             if (la > this.lowPeak) this.lowPeak = la;
+            const vb = this.vb[3].step(this.vb[2].step(this.vb[1].step(this.vb[0].step(input[i]))));
+            if (++this.vPhase >= this.vDec) { this.vPhase = 0; this.vRing[this.vCount & (this.vRingSize - 1)] = vb; this.vCount++; }
             if (++this.tickFill === this.tick) {
                 this.lowEnv[this.tickCount % this.envSize] = DB(this.lowPeak);
                 this._onTick(DB(this.tickPeak), events);
@@ -152,7 +176,8 @@ export class EdgeDetector {
         const last = this.cands[this.cands.length - 1];
         if (k >= this.nextAllowedTick && (!last || k - last.k0 >= 3) &&
             eDb - this.floorDb >= this.snrDb && eDb >= P.absFloorDb) {
-            this.cands.push({ k0: k, floorDb: this.floorDb, evalAt: k + 4 + Math.max(40, Math.ceil(P.maxDecayMs)) + 2 });
+            const wait = Math.max(4 + Math.max(40, Math.ceil(P.maxDecayMs)) + 2, P.voiceFilter ? P.voiceWindowMs + 20 : 0);
+            this.cands.push({ k0: k, floorDb: this.floorDb, evalAt: k + wait });
         }
         // --- candidate evaluation -------------------------------------------
         while (this.cands.length && k >= this.cands[0].evalAt) {
@@ -161,6 +186,87 @@ export class EdgeDetector {
             const ev = this._evaluate(c, k);
             if (ev) events.push(ev);
         }
+    }
+
+    /**
+     * Is there speech (a pitched voice) around tick k0? Frames of 30 ms every 10 ms within
+     * ±voiceWindowMs are tested for a clear pitch between 70 and 400 Hz; enough loud voiced
+     * frames (voiceMinMs) means the click is part of someone talking.
+     */
+    _voiced(k0) {
+        const P = this.params, vFs = this.vFs, N = this.vRingSize - 1;
+        const vAtTick = (t) => Math.round(t * this.tick / this.vDec);      // tick → voice-ring index
+        const now = this.vCount;
+        const frame = Math.round(0.030 * vFs), hop = Math.round(0.010 * vFs);
+        const minLag = Math.floor(vFs / 400), maxLag = Math.ceil(vFs / 70);
+        const c0 = vAtTick(k0), w = Math.round(P.voiceWindowMs / 1000 * vFs);
+        const frames = [];
+        for (let start = c0 - w; start + frame + maxLag <= c0 + w && start + frame + maxLag < now; start += hop) {
+            if (start < now - this.vRingSize) continue;
+            // skip frames that contain the click itself (its ringing is not a voice)
+            if (start <= c0 + Math.round(0.004 * vFs) && start + frame + maxLag >= c0 - Math.round(0.002 * vFs)) continue;
+            let e0 = 0;
+            for (let i = 0; i < frame; i++) { const v = this.vRing[(start + i) & N]; e0 += v * v; }
+            if (e0 <= 1e-12) continue;
+            let best = 0, dip = 1, bestLag = 0;
+            const r = new Float32Array(maxLag + 2);
+            for (let lag = 1; lag <= maxLag + 1; lag++) {
+                let xy = 0, e1 = 0;
+                for (let i = 0; i < frame; i++) {
+                    const a = this.vRing[(start + i) & N], b = this.vRing[(start + i + lag) & N];
+                    xy += a * b; e1 += b * b;
+                }
+                r[lag] = xy / Math.sqrt(e0 * e1 + 1e-20);
+            }
+            for (let lag = minLag; lag <= maxLag; lag++) {
+                dip = Math.min(dip, r[lag - 1]);
+                // a real pitch peak: local maximum that rises well above the dip before it
+                if (r[lag] > best && r[lag] >= r[lag - 1] && r[lag] >= r[lag + 1] && r[lag] - dip > 0.3) { best = r[lag]; bestLag = lag; }
+            }
+            let voiced = best >= P.voiceCorr && bestLag > 0;
+            // a voice has several harmonics of its pitch in the band; a pad thud / struck tone has one
+            if (voiced) voiced = this._harmonics(start, frame + maxLag, vFs / bestLag) >= 2;
+            frames.push({ db: 10 * Math.log10(e0 / frame), voiced });
+        }
+        if (!frames.length) return false;
+        const vf = frames.filter(f => f.voiced);
+        if (!vf.length) return false;
+        const top = Math.max(...vf.map(f => f.db));
+        // voice must be steady (a pad thud is a short decaying tone) and not buried in hiss
+        const floorDb = frames.map(f => f.db).sort((a, b) => a - b)[0];
+        // steady level: a vowel holds it for 80 ms+, a pad thud (a decaying tone) loses 6 dB in < 30 ms
+        const strong = vf.filter(f => f.db >= top - 6 && f.db >= floorDb + 6).length;
+        return strong * 10 >= P.voiceMinMs;
+    }
+
+    /**
+     * How many harmonics of f0 (within the voice band) stand out as spectral peaks.
+     * A voice is a comb: energy at h·f0 and valleys at (h±½)·f0. A pad thud or a
+     * struck tone is one decaying sinusoid whose leakage is smooth, so at most one
+     * "harmonic" beats its neighbouring valleys.
+     */
+    _harmonics(start, len, f0) {
+        const P = this.params, N = this.vRingSize - 1, vFs = this.vFs;
+        const power = (f) => {                                  // Hann-windowed Goertzel
+            const w = 2 * Math.cos(2 * Math.PI * f / vFs);
+            let s1 = 0, s2 = 0;
+            for (let i = 0; i < len; i++) {
+                const win = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (len - 1));
+                const s0 = this.vRing[(start + i) & N] * win + w * s1 - s2;
+                s2 = s1; s1 = s0;
+            }
+            return s1 * s1 + s2 * s2 - w * s1 * s2;
+        };
+        const peaks = [];
+        for (let h = 1; (h + 0.5) * f0 <= P.voiceHiHz * 1.1; h++) {
+            const f = h * f0;
+            if (f < P.voiceLoHz * 0.9) continue;
+            const pk = power(f), lo = power(f - f0 / 2), hi = power(f + f0 / 2);
+            peaks.push({ pk, ok: pk > 4 * lo && pk > 4 * hi });  // ≥ 6 dB above both valleys
+        }
+        if (!peaks.length) return 0;
+        const top = Math.max(...peaks.map(p => p.pk));
+        return peaks.filter(p => p.ok && p.pk >= top * 0.03).length;   // and within 15 dB of the strongest
     }
 
     _evaluate(c, k) {
@@ -208,6 +314,7 @@ export class EdgeDetector {
         else if (decayMs > P.maxDecayMs) reason = 'sustained';
         else if (!tailOk) reason = 'tail';
         else if (isThud) reason = 'thud';
+        else if (P.voiceFilter && this._voiced(c.k0)) reason = 'voice';
 
         if (reason) {
             if (this.debug) this.rejected.push({ tick: c.k0, reason, riseDb, decayMs, snrDb, tailDb: tailDb - peakDb, low: lowPk - peakDb });

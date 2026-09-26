@@ -31,7 +31,7 @@ export const MAX_CAMS = 4;
 const CAM_NAMES = ['Side-on', 'Front-on', 'Behind the stumps', 'Wide'];
 
 const app = {
-    engine: new AudioEngine({ seconds: 60, params: { sensitivity: store.get('sens', 85) } }),
+    engine: new AudioEngine({ seconds: 60, params: { sensitivity: store.get('sens', 85), voiceFilter: store.get('voiceFilter', true) } }),
     cams: [],              // [{ name, video, tile, frames: FrameBuffer }]
     receivers: [],
     streams: [],
@@ -530,7 +530,7 @@ async function analyseFile(file) {
         const mono = new Float32Array(n);
         for (let c = 0; c < ab.numberOfChannels; c++) { const d = ab.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / ab.numberOfChannels; }
         status('Detecting spikes…');
-        const det = new EdgeDetector(fs, { sensitivity: +$('sens').value });
+        const det = new EdgeDetector(fs, { sensitivity: +$('sens').value, voiceFilter: $('ignoreVoice').checked });
         const hp = new Float32Array(n);
         const hits = [];
         for (let i = 0; i < n; i += 8192) {
@@ -630,6 +630,7 @@ function studioState() {
         layout: app.liveLayout,
         sens: +$('sens').value,
         autoReview: $('autoReview').checked,
+        voiceFilter: $('ignoreVoice').checked,
         hp: $('scopeHp').checked,
         status: $('status').textContent,
         deliveries: app.deliveries.slice(0, 12).map(d => {
@@ -673,6 +674,7 @@ async function remoteCommand(m) {
         case 'syncHere': review.syncHere(); break;
         case 'sens': { const v = Math.max(0, Math.min(100, Math.round(+m.v))); $('sens').value = v; $('sens').oninput({ target: $('sens') }); break; }
         case 'auto': $('autoReview').checked = !!m.on; store.set('autoReview', !!m.on); break;
+        case 'voice': $('ignoreVoice').checked = !!m.on; $('ignoreVoice').onchange({ target: $('ignoreVoice') }); break;
         case 'layout': setLayout(+m.k); break;
         default: console.warn('unknown remote command', m.cmd);
     }
@@ -922,6 +924,10 @@ function init() {
     $('sens').value = store.get('sens', 85); $('sensVal').textContent = $('sens').value;
     $('autoReview').checked = store.get('autoReview', false);
     $('autoReview').onchange = (e) => { store.set('autoReview', e.target.checked); schedulePush(); };
+    $('ignoreVoice').checked = store.get('voiceFilter', true);
+    $('ignoreVoice').onchange = (e) => {
+        app.engine.setParams({ voiceFilter: e.target.checked }); store.set('voiceFilter', e.target.checked); schedulePush();
+    };
     $('listen').onchange = (e) => app.engine.setMonitor(e.target.checked);
     $('btnClear').onclick = () => { app.deliveries = []; app.liveHits = []; renderHits(); };
     $('btnExportLog').onclick = () => {

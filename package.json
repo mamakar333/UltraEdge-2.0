@@ -6,6 +6,7 @@
   "scripts": {
     "start": "python3 serve.py 8001",
     "test": "node tests/make-media.mjs && node tests/detector.test.mjs",
+    "bench:voice": "node tests/voice.bench.mjs",
     "test:e2e": "python3 tests/e2e.py",
     "test:remote": "python3 tests/remote.e2e.py"
   }

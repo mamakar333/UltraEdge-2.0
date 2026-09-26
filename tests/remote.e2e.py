@@ -126,6 +126,10 @@ try:
         # sensitivity from the phone
         ph.evaluate("(() => { const s = document.getElementById('sens'); s.value = 80; s.dispatchEvent(new Event('change')); })()")
         check(wait(lap, "document.getElementById('sens').value === '80'", 'sens'), 'phone changes detection sensitivity on the laptop')
+        ph.evaluate("(() => { const c = document.getElementById('ignoreVoice'); c.checked = false; c.dispatchEvent(new Event('change')); })()")
+        check(wait(lap, "!document.getElementById('ignoreVoice').checked && JSON.parse(localStorage.getItem('ue.voiceFilter')) === false", 'voice'), 'phone turns the voice filter off on the laptop')
+        ph.evaluate("(() => { const c = document.getElementById('ignoreVoice'); c.checked = true; c.dispatchEvent(new Event('change')); })()")
+        check(wait(lap, "document.getElementById('ignoreVoice').checked", 'voice on'), 'and back on')
 
         # review from the phone
         ph.click('#btnReviewLast')

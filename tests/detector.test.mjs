@@ -7,7 +7,7 @@ import { scene } from './synth.mjs';
 const args = Object.fromEntries(process.argv.slice(2).map(a => a.replace(/^--/, '').split('=')).map(([k, v]) => [k, v ?? true]));
 const FS = 48000;
 const N = args.quick ? 8 : 24, SECS = 20;
-const params = {}; if (args.sens) params.sensitivity = +args.sens; if (args.hpf) params.hpfHz = +args.hpf;
+const params = args.p ? JSON.parse(args.p) : {}; if (args.sens) params.sensitivity = +args.sens; if (args.hpf) params.hpfHz = +args.hpf;
 
 function opus(x, kbps) {
     const buf = Buffer.from(x.buffer, x.byteOffset, x.byteLength);

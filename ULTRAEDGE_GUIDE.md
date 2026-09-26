@@ -72,7 +72,7 @@ The computer running UltraEdge is the source of truth: the cameras and the stump
 * step frames (or swipe across the picture), play in slow motion with sound, jump to the next spike
 * switch camera angle or show the grid, and change the speed and the audio window
 * stamp **SPIKE · EDGE** / **NO SPIKE**
-* change the sensitivity, the replay sound, the HF view and the A/V sync
+* change the sensitivity, turn **Ignore voices** on or off, the replay sound, the HF view and the A/V sync
 
 Nothing runs on the phone except the picture and the buttons, and it never asks for sources. Start it with **Umpire view** in the top bar, which shows a QR code for the phones and how many are connected. When a CrickVision match is linked it starts by itself as soon as you press **Connect & start**.
 
@@ -108,6 +108,7 @@ The offset is saved separately for live mode and file mode. You can fine-tune it
    * no sustained tail
    * no periodic pulse train (voiced speech)
    * not a low-frequency thud (ball on pad or ground)
+   * nobody is talking around it (**Ignore voices**, on by default; see below)
 4. The onset is refined to the exact sample. The refinement is robust to Opus codec pre-echo.
 
 Offline results on synthetic cricket audio (`npm test`). "False alarms" means false detections per minute.
@@ -120,6 +121,21 @@ Offline results on synthetic cricket audio (`npm test`). "False alarms" means fa
 | Opus 128 kbps + noise (the `&proaudio` link) | 89 % | 0 / min | 0.04 ms |
 
 The misses are faint edges that sit less than about 10 dB above the crowd noise. Better mic placement and a windshield help more than raising the sensitivity.
+
+### Ignore voices
+
+Talking near the stump mic is the biggest source of false spikes: consonants (t, k, p), tongue clicks, claps and "Howzat!" all have a sharp high-frequency attack. With **Ignore voices** on, the detector waits about 170 ms after each candidate and checks the 250–1200 Hz band for a voice within ±150 ms of it. A voice is pitched (70–400 Hz autocorrelation), has at least two harmonics that stand out from the valleys between them, and holds its level for at least 20 ms. A pad thud is a single decaying tone, so it is not mistaken for a voice. The switch is under the sensitivity slider on the laptop and on the umpire phone.
+
+Results on 30 s scenes with constant chatter, appeals, claps and music (`node tests/voice.bench.mjs`):
+
+| | Recall | False alarms |
+|---|---|---|
+| Ignore voices off | 100 % | 40 / min |
+| Ignore voices on | 100 % | 0.3 / min |
+
+On the standard suite above it costs under 1 % recall. An edge that happens while someone is shouting over it is ignored, so turn it off in a quiet net session if you want every click.
+
+Why not an AI noise remover? Tools like RNNoise, Krisp or NVIDIA Broadcast are built to keep speech and remove everything else, which is the opposite of what UltraEdge needs, and they smear the sharp transients an edge makes. Source-separation models (Demucs and similar) can split voice from the rest but are too heavy to run live in a browser. Rejecting clicks that coincide with a voice keeps the raw edge sound untouched.
 
 ## Limits to know
 
