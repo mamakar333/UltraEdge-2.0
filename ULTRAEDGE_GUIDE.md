@@ -6,7 +6,7 @@ is detected with sub-millisecond timing, and the third-umpire replay shows the v
 **frame by frame with the synchronised audio trace underneath**, so you can see whether the
 spike happens as the ball passes the bat.
 
-The older pages (`index.html`, `live-mode.html`, `video-mode.html`) are unchanged.
+The site's plain address (and the old v2 page addresses) forward to `ultraedge.html`.
 
 ## Start it
 

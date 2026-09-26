@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Ultra Edge DRS - Launch Script
+# UltraEdge - Launch Script
 # Starts the local server and opens the app in browser
 
-echo "🏏 Ultra Edge DRS - Cricket Analysis System"
+echo "🏏 UltraEdge - Cricket Analysis System"
 echo "=========================================="
 echo ""
 
@@ -32,7 +32,7 @@ SERVER_PID=$!
 sleep 2
 
 # Open in default browser
-echo "🌐 Opening Ultra Edge DRS in your browser..."
+echo "🌐 Opening UltraEdge in your browser..."
 echo ""
 
 # Detect OS and open browser accordingly

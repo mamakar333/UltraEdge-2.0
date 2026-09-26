@@ -41,7 +41,7 @@ js/ue/host-bridge.js      CrickVision match link: saves verdicts (POST …/edge-
 remote.html, js/ue/remote.js   umpire phone page: mirrors the studio and sends commands (no media capture)
 tests/                    synthetic audio generator, detector benchmark (Node), headless e2e (Playwright)
 serve.py                  no-cache local server:  python3 serve.py → http://localhost:8001/ultraedge.html
-index.html, live-mode.html, video-mode.html, js/*.js (outside js/ue)   OLD v2, not used by v3
+index.html (+ live-mode / video-mode / ultra-edge-simple.html)   forward to ultraedge.html (old v2 addresses)
 ```
 
 ## 3. Data flow
@@ -207,7 +207,7 @@ A live session has `angles: [{ name, frames, offsetMs }]` and `angle`. `session.
 - **Memory:** about 12 MB of audio (60 s × 2 buffers), plus the JPEG frames (about 20 s × fps × 30–80 KB).
 - **Frame rate limits the visual precision, not the audio.** At 130 km/h the ball moves about 1.2 m per frame at 30 fps.
 - **Detection is heuristic.** It is tuned on synthetic audio: 91–100 % of contacts found and fewer than 0.2 false alarms a minute in the benchmarks. It is **not yet tuned on real match audio.** The replay trace is what the operator judges from.
-- **Settings keys** in localStorage: `ue.sens`, `ue.cfg` (v2: `{ cams:[{name, src, id, device}], mic:{src, id, device}, match }`), `ue.autoReview`, `ue.offsetLive`, `ue.offsetLive1…3`, `ue.offsetFile`, `ue.studioKey`. Globals for debugging: `window.ultraedge` (app state) and `window.ultraedgeReview`.
+- **Settings keys** in localStorage: `ue.sens`, `ue.cfg` (v2: `{ cams:[{name, src, id, device}], mic:{src, id, device}, match }`), `ue.autoReview`, `ue.offsetLive`, `ue.offsetLive1…3`, `ue.offsetFile`, `ue.studioKey`, `ue.rot0…3` (camera rotation). Globals for debugging: `window.ultraedge` (app state) and `window.ultraedgeReview`.
 
 ## 7. Verify you didn't break it
 
