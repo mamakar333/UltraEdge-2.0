@@ -6,7 +6,8 @@
  *   phone   (remote.html)     ── views the program, sends commands, receives the studio state
  *
  * Transport is the VDO.ninja SDK (same as the camera phones), so there is no server to run.
- * The studio stream ID is derived from the CrickVision match, so every phone on that match finds it.
+ * There is one studio feed (STUDIO_FEED): the laptop always broadcasts on it and every umpire phone
+ * connects to it, whatever match the phone was opened from. (?studio=<name> picks another feed.)
  *
  * Messages (plain objects):
  *   remote → studio  { ue: 'cmd',   cmd: 'reviewLast' | 'step' | ..., ...args }
@@ -14,7 +15,10 @@
  *   studio → remote  { ue: 'event', type: 'verdict', ... }
  */
 
-/** Stream ID of the studio for a match (or any other session name). */
+/** The feed the laptop broadcasts on and umpire phones watch. */
+export const STUDIO_FEED = 'crickvision';
+
+/** Stream ID for a feed name. */
 export function studioStreamId(key) {
     const k = String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     return k ? 'uestudio' + k.slice(0, 24) : '';

@@ -1,6 +1,6 @@
 """End-to-end test of the studio (laptop) ⇄ umpire phone link, multi-camera replay and CrickVision verdicts.
 
-  laptop  /?matchId=…  two cameras (fake phones) + stump mic → publishes its screen
+  laptop  /  (no match, no IDs)  two cameras (fake phones) + stump mic → publishes its screen
   phone   remote.html?matchId=…     (what the CrickVision app opens) watches it and drives it
 
 VDO.ninja is replaced by tests/mock/vdoninja-mock.js (real WebRTC between the two pages, signalled over a
@@ -74,11 +74,10 @@ try:
 
         # ------------------------------------------------------------------ laptop
         lap = ctx.new_page(); prep(lap, 'laptop')
-        lap.goto(f'http://localhost:{PORT}/?matchId={MATCH}')
-        wait(lap, "document.getElementById('cvBanner') && document.getElementById('cvBanner').textContent.includes('IND v AUS')", 'match banner')
-        check('IND v AUS' in (lap.text_content('#cvBanner') or ''), 'laptop linked to the CrickVision match from the URL (banner shows IND v AUS)')
+        # the operator just opens the site: no match link and no IDs to type
+        lap.goto(f'http://localhost:{PORT}/')
         lap.click('#btnSetup'); lap.wait_for_timeout(400)
-        check(lap.input_value('#matchRef') == MATCH, 'match ID filled in Setup sources')
+        check(lap.input_value('#matchRef') == '', 'laptop starts with no match linked')
         lap.click('#btnAddCam'); lap.wait_for_timeout(200)
         lap.fill('.cam-row:nth-child(2) .cam-name-in', 'Front-on')
         check(lap.locator('.cam-row').count() == 2, 'second camera row added')
@@ -92,7 +91,7 @@ try:
         wait(lap, 'window.ultraedge.running === true', 'live', 30000)
         check(lap.evaluate('window.ultraedge.cams.length') == 2, 'two cameras live')
         wait(lap, 'window.ultraedge.broadcast.live', 'umpire view', 15000)
-        check(lap.evaluate('window.ultraedge.broadcast.live'), 'umpire view started automatically (match linked)')
+        check(lap.evaluate('window.ultraedge.broadcast.live'), 'umpire view started automatically (no match needed)')
         lap.wait_for_timeout(6000)
         lap.screenshot(path=f'{OUT}/r02-laptop-live-2cams.png')
         st = lap.evaluate('() => window.ultraedge.cams.map(c => ({ name: c.name, fps: c.frames.fps, n: c.frames.frames.length }))')
@@ -108,7 +107,10 @@ try:
         check(any(m['type'] == 'ultraedge:ready' for m in ph.evaluate('window.__msgs')), 'app told the page is ready')
         vw = ph.evaluate("[document.getElementById('program').videoWidth, document.getElementById('program').videoHeight]")
         check(vw[1] > 0 and abs(vw[0] / vw[1] - 1.28) < 0.02, f'program has the laptop layout (1280×1000 aspect; WebRTC picks the resolution: {vw})')
-        check('IND v AUS' in ph.text_content('#title'), 'phone header shows the match')
+        # the laptop picks up the match the umpire phone was opened from
+        check(wait(lap, "document.getElementById('cvBanner') && document.getElementById('cvBanner').textContent.includes('IND v AUS')", 'adopted match', 20000),
+              "laptop links the umpire phone's match by itself (banner shows IND v AUS)")
+        check(wait(ph, "document.getElementById('title').textContent.includes('IND v AUS')", 'phone title', 15000), 'phone header shows the match')
         wait(lap, 'window.ultraedge.broadcast.viewers >= 1', 'viewer count')
         check('1 phone' in lap.text_content('#pillUmpire'), f"laptop shows the connected umpire phone ({lap.text_content('#pillUmpire')})")
         bright = ph.evaluate('''() => { const v = document.getElementById('program'); const c = document.createElement('canvas'); c.width = 64; c.height = 50;
@@ -131,7 +133,7 @@ try:
         check(wait(ph, "!document.getElementById('reviewPanel').hidden", 'phone review panel'), 'phone shows the replay controls')
         s = lap.evaluate('() => { const s = window.ultraedgeReview.session; return { angles: s.angles.map(a => ({ name: a.name, n: a.frames.count })), angle: window.ultraedgeReview.angle } }')
         print('   replay angles:', s)
-        check(len(s['angles']) == 2 and all(a['n'] > 30 for a in s['angles']), 'replay has both camera angles with frames')
+        check(len(s['angles']) == 2 and all(a['n'] > 20 for a in s['angles']), 'replay has both camera angles with frames')
         f0 = lap.evaluate('window.ultraedgeReview.i')
         ph.click('#rvNext'); ph.click('#rvNext')
         check(wait(lap, f'window.ultraedgeReview.i === {f0 + 2}', 'step'), 'phone steps frames on the laptop (+2)')

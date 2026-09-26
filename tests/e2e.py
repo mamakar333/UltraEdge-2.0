@@ -192,7 +192,7 @@ try:
         pg2.wait_for_timeout(9000)
         st2 = pg2.evaluate('() => ({ mocks: window.__ninjaMock, hits: window.ultraedge.liveHits.length, fps: window.ultraedge.frames.fps, keep: window.ultraedge.keepAlive.length })')
         print('   phone path:', st2)
-        check(st2['mocks'] == 2 and st2['hits'] >= 3 and st2['fps'] >= 20 and st2['keep'] == 1, 'two-phone path: camera phone video + stump-mic phone audio, spikes detected')
+        check(st2['mocks'] == 3 and st2['hits'] >= 3 and st2['fps'] >= 20 and st2['keep'] == 1, 'two-phone path: camera phone video + stump-mic phone audio (+ the umpire broadcast), spikes detected')
         pg2.screenshot(path=f'{OUT}/09-phone-live.png')
         b.close()
 finally:

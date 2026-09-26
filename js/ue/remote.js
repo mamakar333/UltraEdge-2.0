@@ -7,12 +7,12 @@
  *   remote.html?matchId=<CrickVision match>[&api=…][&over=12.3&innings=1&batterId=…&bowlerId=…]
  *   remote.html?studio=<session key shown on the laptop>
  */
-import { RemoteLink, studioStreamId } from './link.js';
+import { RemoteLink, studioStreamId, STUDIO_FEED } from './link.js';
 import { host } from './host-bridge.js';
 
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
-const key = host.matchId || q.get('studio') || '';
+const key = q.get('studio') || STUDIO_FEED;   // one feed, whatever match this phone was opened from
 const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const ui = { state: null, link: null, connecting: false, retry: null, awaitingVerdict: null, lastStateAt: 0 };
@@ -44,11 +44,12 @@ async function connect() {
     const link = (ui.link = new RemoteLink());
     link.addEventListener('state', (e) => { ui.lastStateAt = Date.now(); render(e.detail); });
     link.addEventListener('event', (e) => onEvent(e.detail));
-    link.addEventListener('open', () => link.command('hello'));
+    const hello = () => link.command('hello', { matchId: host.matchId || null, api: host.api });
+    link.addEventListener('open', hello);
     link.addEventListener('status', () => { if (ui.link === link) lost(); });
     setConn(false, 'connecting');
     overlay(ui.state ? 'Reconnecting to the UltraEdge laptop…' : 'Connecting to the UltraEdge laptop…',
-        host.matchId ? 'The laptop must have UltraEdge open with this match linked.' : '');
+        'Open UltraEdge on the laptop (ultraedge.onrender.com) and press Connect & start.');
     try {
         const stream = await link.connect(studioStreamId(key), { timeoutMs: 25000 });
         if (ui.link !== link) return;
@@ -58,12 +59,12 @@ async function connect() {
         overlay('');
         setConn(true, 'live');
         $('btnSound').hidden = !v.muted;
-        link.command('hello');
+        hello();
     } catch (err) {
         if (ui.link !== link) return;
         link.disconnect();
         setConn(false, 'waiting');
-        overlay('Waiting for the UltraEdge laptop…', 'On the laptop: open UltraEdge, link this match (Setup sources → CrickVision match) and press Connect & start. This screen connects by itself.');
+        overlay('Waiting for the UltraEdge laptop…', 'On the laptop: open ultraedge.onrender.com, set up the camera and stump mic, and press Connect & start. This screen connects by itself.');
         ui.retry = setTimeout(connect, 4000);
     } finally { ui.connecting = false; }
 }
@@ -184,7 +185,7 @@ function bind() {
     const verdict = (v) => {
         ui.awaitingVerdict = Date.now();
         $('rvSaved').textContent = host.matchId ? 'Saving…' : ''; $('rvSaved').className = 'saved';
-        cmd('verdict', { v, ball: host.ball.over || host.ball.inningsNumber ? host.ball : null });
+        cmd('verdict', { v, ball: host.ball.over || host.ball.inningsNumber ? host.ball : null, matchId: host.matchId || null, api: host.api });
     };
     $('rvEdge').onclick = () => verdict('EDGE');
     $('rvNoEdge').onclick = () => verdict('NO EDGE');

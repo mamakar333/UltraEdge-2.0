@@ -45,7 +45,7 @@ export class StudioBroadcast extends EventTarget {
         this._stateTimer = null;
         this._lastState = '';
         this.link.addEventListener('command', (e) => this._command(e.detail));
-        this.link.addEventListener('peers', () => { this._emit(); this.pushState(true); });
+        this.link.addEventListener('peers', () => { this.compose(); this._emit(); this.pushState(true); });
         this.link.addEventListener('join', () => this.pushState(true));
         this.link.addEventListener('status', (e) => { this.status = e.detail; this._emit(); });
     }
@@ -59,7 +59,13 @@ export class StudioBroadcast extends EventTarget {
         this.status = 'starting';
         this._emit();
         this.compose();
-        this._stopTick = workerTicker(Math.round(1000 / this.fps), () => this.compose());
+        // full frame rate only while an umpire phone watches; otherwise 1 frame/s keeps the stream alive
+        // without costing the laptop the video capture it needs for replays
+        let idle = 0;
+        this._stopTick = workerTicker(Math.round(1000 / this.fps), () => {
+            if (this.viewers === 0 && (idle++ % this.fps) !== 0) return;
+            this.compose();
+        });
         const stream = this.canvas.captureStream(this.fps);
         // an umpire needs sharp frames more than a smooth frame rate when the network is tight
         stream.getVideoTracks().forEach(t => { try { t.contentHint = 'detail'; } catch { } });

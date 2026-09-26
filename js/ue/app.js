@@ -17,7 +17,7 @@ import { EdgeDetector } from './edge-detector.js';
 import * as src from './sources.js';
 import { host, parseMatchRef, CV_API_DEFAULT } from './host-bridge.js';
 import { StudioBroadcast } from './broadcast.js';
-import { studioStreamId } from './link.js';
+import { studioStreamId, STUDIO_FEED } from './link.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -280,8 +280,8 @@ async function startLive(cfg) {
     $('btnStop').hidden = false;
     setState('LIVE', true);
     msg(`Live. Audio ${app.engine.sampleRate} Hz · ${app.cams.length ? app.cams.length + ' camera' + (app.cams.length > 1 ? 's' : '') : 'no camera'}`);
-    // a match is linked → umpire phones can watch straight away
-    if (host.matchId && !broadcast.live) startUmpire().catch(() => { });
+    // umpire phones can watch straight away (no match link needed)
+    if (!broadcast.live) startUmpire().catch(() => { });
 }
 
 function onHit(h) {
@@ -645,7 +645,10 @@ function studioState() {
 async function remoteCommand(m) {
     const clampStep = (n) => Math.max(-30, Math.min(30, Math.round(+n || 0)));
     switch (m.cmd) {
-        case 'hello': break;
+        case 'hello':
+            // an umpire phone opened from a CrickVision match: verdicts go to that match
+            if (m.matchId && !host.matchId) await adoptMatch(m.matchId, m.api);
+            break;
         case 'reviewLast': reviewLast(); break;
         case 'open': { const d = app.deliveries.find(x => x.id === m.id); if (d) openDelivery(d); break; }
         case 'close': if (review.isOpen) review.close(); break;
@@ -656,6 +659,7 @@ async function remoteCommand(m) {
         case 'hit': review.jumpToHit(m.dir < 0 ? -1 : 1); break;
         case 'verdict':
             if (!review.isOpen) break;
+            if (m.matchId && m.matchId !== host.matchId) await adoptMatch(m.matchId, m.api);
             pendingBall = m.ball && typeof m.ball === 'object' ? m.ball : null;
             review.setVerdict(m.v === 'EDGE' ? 'EDGE' : 'NO EDGE');
             break;
@@ -685,16 +689,19 @@ function schedulePush() {
 }
 review.onChange = schedulePush;
 
-function studioKey() { return host.matchId || app.sessionKey; }
+/** One feed for every umpire phone, whatever match it was opened from (?studio=<name> for a separate one). */
+const STUDIO = new URLSearchParams(location.search).get('studio') || STUDIO_FEED;
+function studioKey() { return STUDIO; }
 
 /** The link an umpire opens (the CrickVision app opens the same page for the match automatically). */
 function remoteUrl() {
     const u = new URL('remote.html', location.href);
+    if (STUDIO !== STUDIO_FEED) u.searchParams.set('studio', STUDIO);
     if (host.matchId) {
         u.searchParams.set('matchId', host.matchId);
         const api = new URL(host.api, location.href).href.replace(/\/$/, '');
         if (api !== CV_API_DEFAULT) u.searchParams.set('api', api);
-    } else u.searchParams.set('studio', app.sessionKey);
+    }
     return u.href;
 }
 
@@ -713,7 +720,7 @@ function renderUmpire() {
     $('linkUmpire').textContent = url;
     $('umpireHow').innerHTML = host.matchId
         ? `Linked to CrickVision match <b>${esc(app.matchTitle || host.matchId)}</b>: in the CrickVision app, open the match's scoring screen and tap <b>UltraEdge</b>. Or scan:`
-        : 'No CrickVision match linked (Setup sources → CrickVision match). Umpires scan this code:';
+        : 'Umpire phones connect by themselves: in the CrickVision app open any live match\'s scoring screen and tap <b>UltraEdge</b> (verdicts are saved to that match). Or scan:';
     if ($('umpireSheet').classList.contains('open')) renderQr($('qrUmpire'), url);
 }
 broadcast.addEventListener('change', renderUmpire);
@@ -831,6 +838,14 @@ async function openSetup() {
     refreshSetup();
 }
 
+/** Link the match an umpire phone was opened from (it's the match being scored). */
+async function adoptMatch(id, api) {
+    if (api && /^https:\/\//.test(api)) host.api = String(api).replace(/\/$/, '');
+    $('matchRef').value = id;
+    host.setMatch(id);                       // verdicts go there at once…
+    linkMatch(id).then(() => status(`Linked to the umpire's match: ${app.matchTitle || id}`)).catch(() => { });   // …title loads in the background
+}
+
 async function linkMatch(ref) {
     host.setMatch(ref);
     form.match = host.matchId;
@@ -856,8 +871,6 @@ async function linkMatch(ref) {
     if (!b) { b = document.createElement('div'); b.id = 'cvBanner'; b.className = 'cv-banner'; document.querySelector('.top').after(b); }
     b.textContent = `CrickVision · ${app.matchTitle || host.matchId} · verdicts are saved to this match`;
     renderUmpire(); schedulePush();
-    // phones follow the match: restart the umpire view under the match's stream ID
-    if (broadcast.live) startUmpire().catch(() => { });
 }
 
 function bindCopy(root = document) {
