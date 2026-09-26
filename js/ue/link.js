@@ -1,7 +1,7 @@
 /**
  * Studio ⇄ remote link (laptop is the source of truth, phones mirror and control it).
  *
- *   laptop  (ultraedge.html)  ── publishes the "program" (what the laptop shows) as a WebRTC stream
+ *   laptop  (index.html)  ── publishes the "program" (what the laptop shows) as a WebRTC stream
  *                             ◄─ receives control commands over the same peer connection's data channel
  *   phone   (remote.html)     ── views the program, sends commands, receives the studio state
  *

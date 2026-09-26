@@ -8,7 +8,7 @@ video frame by frame with the synchronised sound trace underneath.
 
 | Page | Who uses it |
 |---|---|
-| `ultraedge.html` | The laptop running the review: cameras, stump mic, detection, replays |
+| `index.html` (the main address) | The laptop running the review: cameras, stump mic, detection, replays |
 | `remote.html` | Umpire phones: see the laptop's screen live and control the review |
 
 The CrickVision scoring app opens `remote.html` for the match being scored and saves
@@ -18,7 +18,7 @@ EDGE / NO EDGE verdicts against the ball.
 
 ```bash
 python3 serve.py        # or double-click launch.command
-# open http://localhost:8001/ultraedge.html   (camera and mic only work on localhost or https)
+# open http://localhost:8001/   (camera and mic only work on localhost or https)
 ```
 
 ## Tests

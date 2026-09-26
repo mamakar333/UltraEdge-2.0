@@ -25,7 +25,7 @@ It runs in Chrome/Edge (Safari mostly works). Phones connect through the **VDO.n
 ## 2. Repo map (only the parts that matter)
 
 ```
-ultraedge.html            UI shell (setup modal, live view, review overlay)
+index.html                UI shell (setup modal, live view, review overlay)
 css/ultraedge.css
 js/ue/edge-detector.js    ★ pure DSP detector, no browser APIs (runs in Node, a Worker or an AudioWorklet)
 js/ue/ue-worklet.js       AudioWorklet: runs EdgeDetector per sample and streams PCM to the main thread
@@ -40,8 +40,8 @@ js/ue/link.js             StudioLink / RemoteLink over the VDO.ninja SDK (video 
 js/ue/host-bridge.js      CrickVision match link: saves verdicts (POST …/edge-reviews), native-app bridge
 remote.html, js/ue/remote.js   umpire phone page: mirrors the studio and sends commands (no media capture)
 tests/                    synthetic audio generator, detector benchmark (Node), headless e2e (Playwright)
-serve.py                  no-cache local server:  python3 serve.py → http://localhost:8001/ultraedge.html
-index.html (+ live-mode / video-mode / ultra-edge-simple.html)   forward to ultraedge.html (old v2 addresses)
+serve.py                  no-cache local server:  python3 serve.py → http://localhost:8001/
+ultraedge.html, live-mode / video-mode / ultra-edge-simple.html   forward to the main address (old links)
 ```
 
 ## 3. Data flow
@@ -149,7 +149,7 @@ A **FrameSource** must provide:
 - `async get(i)`, which returns something `drawImage` accepts
 - `dispose()`
 
-`ReviewPlayer` needs the review markup from `ultraedge.html`: `#review` and all the `#rv*` ids.
+`ReviewPlayer` needs the review markup from `index.html`: `#review` and all the `#rv*` ids.
 
 ```js
 const rp = new ReviewPlayer(document.getElementById('review'), { onOffsetChange(ms){}, onVerdict(session, v){} });
@@ -168,7 +168,7 @@ These are exported from `sources.js`:
 
 ### 4.6 Studio ⇄ umpire phones (remote control)
 
-The laptop page (`ultraedge.html`) is the only place with media and logic. `StudioBroadcast` draws a 1280×1000 "program" canvas ~30×/s. It shows the review canvas while a replay is open, and the camera grid plus the live trace otherwise. The canvas is published with `canvas.captureStream()` plus the replay sound under the stream ID `studioStreamId(matchId || sessionKey)` = `uestudio` + the first 24 alphanumerics.
+The laptop page (`index.html`) is the only place with media and logic. `StudioBroadcast` draws a 1280×1000 "program" canvas ~30×/s. It shows the review canvas while a replay is open, and the camera grid plus the live trace otherwise. The canvas is published with `canvas.captureStream()` plus the replay sound under the stream ID `studioStreamId(matchId || sessionKey)` = `uestudio` + the first 24 alphanumerics.
 
 `remote.html?matchId=…` (or `?studio=<sessionKey>`) views that stream and talks over the data channel:
 
@@ -186,7 +186,7 @@ A live session has `angles: [{ name, frames, offsetMs }]` and `angle`. `session.
 
 | Option | How | When |
 |---|---|---|
-| **A. Embed the whole app** | `<iframe src=".../ultraedge.html" allow="camera; microphone; autoplay">` | You want the UI as-is. It has no postMessage API yet, so add one in `app.js`, e.g. `parent.postMessage({type:'ultraedge:hit', hit}, '*')` inside `onHit` and in `finalizeDelivery`. |
+| **A. Embed the whole app** | `<iframe src="https://ultraedge.onrender.com/" allow="camera; microphone; autoplay">` | You want the UI as-is. It has no postMessage API yet, so add one in `app.js`, e.g. `parent.postMessage({type:'ultraedge:hit', hit}, '*')` inside `onHit` and in `finalizeDelivery`. |
 | **B. Import the modules** | Copy `js/ue/` and use `AudioEngine`, `FrameBuffer`, `ReviewPlayer`, `EdgeDetector` directly, then build your own UI | You need spikes inside another web app, such as a scoring app or a streaming overlay. |
 | **C. Detector only** | `import { detectInBuffer }` in Node / a Worker, or port `edge-detector.js` | Server- or batch-side analysis of recorded clips. Input is mono float PCM plus the sample rate; output is hit events. |
 | **D. Offline hand-off** | Use the UI's **Export log** (JSON) and **Export replay** (WebM) | Loose coupling; the other system just ingests files. |

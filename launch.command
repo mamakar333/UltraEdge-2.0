@@ -15,7 +15,7 @@ python3 serve.py 8001 &
 sleep 2
 
 # Open browser
-open http://localhost:8001/ultraedge.html
+open http://localhost:8001/
 
 echo "✅ UltraEdge is running!"
 echo "Close this window to stop the server"

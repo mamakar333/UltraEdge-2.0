@@ -3,7 +3,7 @@
  *
  * When UltraEdge is linked to a CrickVision match, every EDGE / NO EDGE verdict is saved against a ball
  * of that match (POST {api}/scoring/matches/:matchId/edge-reviews). The link comes from the URL
- *   ultraedge.html?matchId=<uuid>[&api=https://…/api/v1]
+ *   index.html?matchId=<uuid>[&api=https://…/api/v1]
  * or from the match entered in Setup sources (studio), or from the umpire phone's URL (remote.html).
  *
  * It also forwards events to a native host (Android WebView: window.CrickVisionBridge.postMessage(json))

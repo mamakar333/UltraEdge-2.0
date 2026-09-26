@@ -38,20 +38,20 @@ echo ""
 # Detect OS and open browser accordingly
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS
-    open http://localhost:8001/ultraedge.html
+    open http://localhost:8001/
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # Linux
-    xdg-open http://localhost:8001/ultraedge.html 2>/dev/null || \
-    sensible-browser http://localhost:8001/ultraedge.html 2>/dev/null || \
-    firefox http://localhost:8001/ultraedge.html 2>/dev/null
+    xdg-open http://localhost:8001/ 2>/dev/null || \
+    sensible-browser http://localhost:8001/ 2>/dev/null || \
+    firefox http://localhost:8001/ 2>/dev/null
 elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
     # Windows (Git Bash)
-    start http://localhost:8001/ultraedge.html
+    start http://localhost:8001/
 fi
 
 echo ""
 echo "✅ Server is running!"
-echo "📱 Access the app at: http://localhost:8001/ultraedge.html"
+echo "📱 Access the app at: http://localhost:8001/"
 echo ""
 echo "Press Ctrl+C to stop the server"
 echo ""

@@ -1,6 +1,6 @@
 """End-to-end test of the studio (laptop) ⇄ umpire phone link, multi-camera replay and CrickVision verdicts.
 
-  laptop  ultraedge.html?matchId=…  two cameras (fake phones) + stump mic → publishes its screen
+  laptop  /?matchId=…  two cameras (fake phones) + stump mic → publishes its screen
   phone   remote.html?matchId=…     (what the CrickVision app opens) watches it and drives it
 
 VDO.ninja is replaced by tests/mock/vdoninja-mock.js (real WebRTC between the two pages, signalled over a
@@ -74,7 +74,7 @@ try:
 
         # ------------------------------------------------------------------ laptop
         lap = ctx.new_page(); prep(lap, 'laptop')
-        lap.goto(f'http://localhost:{PORT}/ultraedge.html?matchId={MATCH}')
+        lap.goto(f'http://localhost:{PORT}/?matchId={MATCH}')
         wait(lap, "document.getElementById('cvBanner') && document.getElementById('cvBanner').textContent.includes('IND v AUS')", 'match banner')
         check('IND v AUS' in (lap.text_content('#cvBanner') or ''), 'laptop linked to the CrickVision match from the URL (banner shows IND v AUS)')
         lap.click('#btnSetup'); lap.wait_for_timeout(400)

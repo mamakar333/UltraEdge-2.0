@@ -1,18 +1,18 @@
 # UltraEdge 3 — personal snickometer (phone camera + stump mic)
 
-`ultraedge.html` is a rebuilt, focused UltraEdge system that works like the broadcast version:
+UltraEdge (`index.html`, the site's main address) is a rebuilt, focused UltraEdge system that works like the broadcast version:
 a stump microphone is recorded continuously alongside a side-on camera, every bat/ball contact
 is detected with sub-millisecond timing, and the third-umpire replay shows the video
 **frame by frame with the synchronised audio trace underneath**, so you can see whether the
 spike happens as the ball passes the bat.
 
-The site's plain address (and the old v2 page addresses) forward to `ultraedge.html`.
+Older addresses (`ultraedge.html` and the old v2 pages) forward to the main address.
 
 ## Start it
 
 ```bash
 python3 serve.py            # or double-click launch.command
-# open http://localhost:8001/ultraedge.html   (Chrome recommended)
+# open http://localhost:8001/   (Chrome recommended)
 ```
 
 Camera and microphone only work on `http://localhost` or `https`, so open the page on the
@@ -131,7 +131,7 @@ The misses are faint edges that sit less than about 10 dB above the crowd noise.
 
 UltraEdge is a free **Render Static Site** built from this repo (`render.yaml`): there is no build step, it never sleeps, and it redeploys on every push to `main`.
 
-* laptop: `https://ultraedge.onrender.com/ultraedge.html`
+* laptop: `https://ultraedge.onrender.com/`
 * umpire phones: `https://ultraedge.onrender.com/remote.html` (the CrickVision app opens this page)
 
 The CrickVision server holds the address in its `ULTRAEDGE_URL` setting. The app and the website read it from `GET /api/v1/config`, so moving UltraEdge to another host only needs that setting changed, not a new app release. Any HTTPS static host works, since browsers only allow the camera and microphone on secure pages. `python3 serve.py` still works for local use.
@@ -139,7 +139,7 @@ The CrickVision server holds the address in its `ULTRAEDGE_URL` setting. The app
 ## Files
 
 ```
-ultraedge.html, css/ultraedge.css
+index.html, css/ultraedge.css
 js/ue/edge-detector.js   detector (shared by worklet, file mode and tests)
 js/ue/ue-worklet.js      AudioWorklet: detection + PCM streaming
 js/ue/audio-engine.js    AudioContext, 60 s ring buffer, clock mapping

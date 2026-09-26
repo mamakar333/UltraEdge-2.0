@@ -30,7 +30,7 @@ try:
         pg = ctx.new_page()
         pg.on('console', lambda m: (logs.append(f'{m.type}: {m.text}'), errors.append(m.text) if m.type == 'error' else None))
         pg.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
-        pg.goto(f'http://localhost:{PORT}/ultraedge.html')
+        pg.goto(f'http://localhost:{PORT}/')
         pg.wait_for_timeout(1500)
         pg.screenshot(path=f'{OUT}/01-idle.png')
 
@@ -179,7 +179,7 @@ try:
         mock = open(os.path.join(ROOT, 'tests', 'mock', 'vdoninja-mock.js')).read()
         pg2.route('**/vdoninja-sdk.min.js', lambda r: r.fulfill(body=mock, content_type='text/javascript'))
         pg2.route('**/qrcode.min.js', lambda r: r.fulfill(body='', content_type='text/javascript'))
-        pg2.goto(f'http://localhost:{PORT}/ultraedge.html'); pg2.wait_for_timeout(1000)
+        pg2.goto(f'http://localhost:{PORT}/'); pg2.wait_for_timeout(1000)
         pg2.click('#btnSetup'); pg2.wait_for_timeout(300)
         pg2.select_option('.cam-row .cam-src', 'phone'); pg2.select_option('#micSrc', 'phone')
         pg2.wait_for_timeout(300)

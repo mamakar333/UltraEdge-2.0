@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Local server for UltraEdge (no-cache so code updates always load).
-Usage: python3 serve.py [port]   → http://localhost:8001/ultraedge.html
+Usage: python3 serve.py [port]   → http://localhost:8001/
 Camera/mic only work on http://localhost or https — open it on this computer."""
 import http.server, sys, functools
 
@@ -13,5 +13,5 @@ class NoCache(http.server.SimpleHTTPRequestHandler):
         pass
 
 port = int(sys.argv[1]) if len(sys.argv) > 1 else 8001
-print(f'UltraEdge running at http://localhost:{port}/ultraedge.html  (Ctrl+C to stop)')
+print(f'UltraEdge running at http://localhost:{port}/  (Ctrl+C to stop)')
 http.server.ThreadingHTTPServer(('127.0.0.1', port), NoCache).serve_forever()
