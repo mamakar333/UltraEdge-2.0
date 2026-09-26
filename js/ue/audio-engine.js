@@ -62,6 +62,7 @@ export class AudioEngine {
         if (this.node) try { this.node.disconnect(); this.node.port.onmessage = null; } catch { }
         if (this.ctx) try { await this.ctx.close(); } catch { }
         this.ctx = this.node = this.source = null;
+        this._monitorPath = null;    // belonged to the closed context: must be rebuilt on the next start
         this.origin = null; this.latestFrame = -1; this._clockOffset = null;
     }
 
@@ -73,6 +74,8 @@ export class AudioEngine {
     /** Listen to the (raw) mic through the speakers — handy when positioning the mic. */
     setMonitor(on) {
         if (!this.ctx) return;
+        // Safari keeps a context started outside a click suspended; ticking the box is a click, so resume here
+        if (on && this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
         if (on && !this._monitorPath) {
             this._monitorPath = this.ctx.createGain();
             this._monitorPath.gain.value = 1;

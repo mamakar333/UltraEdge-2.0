@@ -137,6 +137,13 @@ try:
         back = pg.evaluate("() => ({ r: window.ultraedge.cams[0].rotation, css: window.ultraedge.cams[0].video.style.cssText })")
         check(back['r'] == 0 and back['css'] == '', 'four taps bring the picture back to normal')
 
+        # 🔊 live sound: ticking the box routes the mic to the speakers, unticking removes it
+        pg.check('#listen'); pg.wait_for_timeout(300)
+        on = pg.evaluate("() => !!window.ultraedge.engine._monitorPath && window.ultraedge.engine.ctx.state")
+        pg.uncheck('#listen'); pg.wait_for_timeout(200)
+        off = pg.evaluate("() => window.ultraedge.engine._monitorPath")
+        check(on == 'running' and off is None, 'Play live sound turns the laptop speaker on and off')
+
         # file analysis path
         pg.click('#btnStop'); pg.wait_for_timeout(500)
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', f'{MEDIA}/cam.y4m', '-i', f'{MEDIA}/scene.wav', '-t', '12', '-c:v', 'libvpx', '-b:v', '1M', '-c:a', 'libopus', '-b:a', '128k', f'{OUT}/match.webm'], check=True)
